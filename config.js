@@ -9,6 +9,10 @@ module.exports = {
   // Folder where the WhatsApp login is stored. Keep it private.
   authDir: './auth_info',
 
+  // Use WhatsApp's 8-character pairing code instead of a QR code.
+  // Digits only, with country code. Set PHONE_NUMBER in .env to override.
+  phoneNumber: process.env.PHONE_NUMBER || '919073846974',
+
   // Only these JIDs may use admin commands (e.g. !away).
   // Official owner number: +91 90738 46974 -> '919073846974@s.whatsapp.net'.
   ownerJids: [

@@ -67,20 +67,31 @@ While `!away` is ON, incoming private messages get the away reply instead of AI.
 
 - `GEMINI_API_KEY` — required.
 - `GEMINI_MODEL` — optional override.
+- `PHONE_NUMBER` — digits only with country code, used for pairing (default `919073846974`).
 
 ## 4. Deploying to Render
 
-This repo binds to `process.env.PORT` on `0.0.0.0` so a Render **Web Service** passes the port check.
+This repo binds to `process.env.PORT` on `0.0.0.0`, so a Render **Web Service** passes the port check instead of failing with `Port scan timeout reached / Application exited early`.
 
 1. Create a **Web Service** pointing at this repo (Node environment).
 2. Start command: `npm start`.
-3. Add environment variable `GEMINI_API_KEY` in the Render dashboard. Do **not** commit `.env`.
-4. Deploy, then scan the QR shown in Render logs with WhatsApp → Linked Devices.
+3. Add environment variables in the Render dashboard (do **not** commit `.env`):
+   ```
+   GEMINI_API_KEY=your_key
+   PHONE_NUMBER=919073846974
+   ```
+4. Deploy. The logs will show a short line:
+   ```
+   CODEPLUS pairing code: XXXXXXXX
+   ```
+5. On your phone: **WhatsApp → Linked Devices → Link with phone number → enter that code**.
+
+No QR is printed on Render, so the logs stay small.
 
 ### Important Render limitations
 
 - **Free web services sleep after 15 minutes with no traffic** and take ~1 minute to wake. A pinger that keeps it awake consumes almost the entire 750-hour monthly quota.
-- **Free services have no persistent disk.** Every sleep/redeploy deletes `auth_info/`, so you must scan the QR again.
+- **Free services have no persistent disk.** Every sleep/redeploy deletes `auth_info/`, so you must pair again (a new code appears in the logs).
 - There is **no free background worker** on Render.
 - Do not run a second copy paired to the same WhatsApp account — it will kick the other session into a reconnect loop.
 

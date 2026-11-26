@@ -10,6 +10,7 @@ const { askGemini, resetHistory } = require('./ai');
 const logger = require('./logger');
 
 let reconnecting = false;
+let pairingRequested = false;
 let baileys;
 const outgoingIds = new Set();
 const outgoingTexts = new Map();
@@ -17,6 +18,23 @@ const outgoingTexts = new Map();
 async function loadBaileys() {
   if (!baileys) baileys = await import('@whiskeysockets/baileys');
   return baileys;
+}
+
+async function requestPairingCode(sock) {
+  const phone = (config.phoneNumber || '').replace(/\D/g, '');
+  if (!phone) return;
+
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const code = await sock.requestPairingCode(phone);
+      logger.info(`CODEPLUS pairing code: ${code}`);
+      logger.info('WhatsApp -> Linked Devices -> Link with phone number -> enter this code.');
+      return;
+    } catch (error) {
+      logger.warn(`Pairing code attempt ${attempt} failed:`, error.message);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
 }
 
 async function start() {
@@ -68,12 +86,25 @@ async function start() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      logger.info('Scan this QR with WhatsApp -> Linked Devices');
-      qrcode.generate(qr, { small: true });
+    // Never print a big QR on Render (logs are hard to scan). Pairing uses a
+    // short 8-character code instead. QR is only a local fallback.
+    if (qr && !config.phoneNumber) {
+      if (process.env.PORT) {
+        logger.info('Set PHONE_NUMBER in the environment to pair with a short code.');
+      } else {
+        logger.info('Scan this QR with WhatsApp -> Linked Devices');
+        qrcode.generate(qr, { small: true });
+      }
+    }
+
+    if (connection === 'connecting' && config.phoneNumber && !state.creds.registered && !pairingRequested) {
+      pairingRequested = true;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await requestPairingCode(sock);
     }
 
     if (connection === 'close') {
+      pairingRequested = false;
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) {
         logger.warn('Logged out. Delete auth_info/ and restart to pair again.');
