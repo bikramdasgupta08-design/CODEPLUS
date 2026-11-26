@@ -10,13 +10,13 @@ const handlers = require('./handlers');
 const { handleAwayMessage, state: awayState } = require('./handlers/away');
 const { checkIncoming } = require('./handlers/spam');
 const { findReply } = require('./handlers/autoreply');
-const { isEnabled } = require('./handlers/master');
+const { isChatEnabled, isSelfChat } = require('./handlers/chatstate');
 const { isOwner } = require('./handlers/util');
 const { askAI } = require('./ai');
 const logger = require('./logger');
 
-// These work even while CODEPLUS is disabled, so the owner can turn it back on.
-const MASTER_COMMANDS = new Set(['enable', 'disable', 'status']);
+// Per-chat switches are controlled with these, even when the chat is paused.
+const SWITCH_COMMANDS = new Set(['enable', 'disable', 'status']);
 
 let reconnecting = false;
 let pairingRequested = false;
@@ -182,7 +182,7 @@ async function handleMessage(sock, msg) {
     senderJid,
     fromMe: msg.key.fromMe,
     body,
-    master: isEnabled()
+    chatEnabled: isChatEnabled(chatJid, config)
   });
   if (!body) return;
 
@@ -206,21 +206,24 @@ async function handleMessage(sock, msg) {
     args = rest;
   }
 
-  // Master switch always works for the owner, even while the bot is off.
-  // Non-owners are ignored silently so a disabled bot never reacts at all.
-  if (MASTER_COMMANDS.has(command)) {
+  // Per-chat switches always work for the owner, even when the chat is paused.
+  // Non-owners are ignored silently so a paused chat produces no reaction.
+  if (SWITCH_COMMANDS.has(command)) {
     if (isOwner(senderJid, config)) {
       await handlers[command]({ sock, jid: chatJid, senderJid, args, body, msg, config });
     } else {
-      logger.debug('MASTER_IGNORED', { chatJid, senderJid, command });
+      logger.debug('SWITCH_IGNORED', { chatJid, senderJid, command });
     }
     return;
   }
 
-  // Master OFF: no replies, reactions, auto-replies or spam actions anywhere.
-  if (!isEnabled()) {
-    logger.debug('MASTER_OFF_IGNORE', { chatJid, senderJid, body });
-    return;
+  // A paused chat ignores everything. The owner's own chat is the exception:
+  // all commands keep working there, so you never lose control of the bot.
+  if (!isChatEnabled(chatJid, config)) {
+    if (!(isSelfChat(chatJid, config) && isCommand)) {
+      logger.debug('CHAT_PAUSED_IGNORE', { chatJid, senderJid, body });
+      return;
+    }
   }
 
   // Rate-limit senders before commands or AI so spam cannot trigger either.

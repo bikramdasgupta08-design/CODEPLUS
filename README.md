@@ -29,22 +29,22 @@ sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $(whoami) --hp $HOME
 
 ## 2. How to chat
 
-**First, the owner must send `!enable` once.** CODEPLUS starts disabled and ignores every chat and group until then. After that, just send a normal message:
+**In the owner's own chat, CODEPLUS is already on and all commands work.** In any friend's chat or group, send `!enable` once inside that chat to turn CODEPLUS on there. Until then that chat stays silent. Then just send a normal message:
 
 ```
 hey, what can you do?
 write a python function to reverse a string
 ```
 
-CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!disable` any time to silence it everywhere; `!enable` turns it back on.
+CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!disable` inside a chat to pause only that chat; `!enable` there turns it back on.
 
 ### Commands
 
 | Command | What it does |
 |---|---|
-| `!enable` | Turn CODEPLUS on in all chats/groups (owner only) |
-| `!disable` | Turn CODEPLUS off everywhere (owner only) |
-| `!status` | Show master switch status (owner only) |
+| `!enable` | Enable CODEPLUS in THIS chat only (owner only) |
+| `!disable` | Pause CODEPLUS in THIS chat only (owner only) |
+| `!status` | Show this chat's switch status (owner only) |
 | `!help` | Show all commands |
 | `!ping` | Reply with pong |
 | `!id` | Show the current chat ID |
@@ -60,17 +60,20 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!dis
 
 While `!away` is ON, incoming private messages get the away reply instead of AI.
 
-### Master on/off switch
+### Per-chat on/off switch
 
-CODEPLUS starts **DISABLED**. Only the owner can change the switch, from any chat or group:
+Every friend chat and group has its **own** switch. Only the owner can change it, by sending the command inside the target chat:
 
 ```
-!enable    # bot replies in every chat and group
-!status    # check whether it is on or off
-!disable   # bot ignores every message everywhere
+!enable    # enable CODEPLUS in this chat only
+!status    # check this chat's state
+!disable   # pause CODEPLUS in this chat only
 ```
 
-When disabled, the bot sends nothing at all — no AI, commands, away replies, auto-replies or spam warnings. `!enable`, `!disable` and `!status` still work for the owner; everyone else is ignored silently. The state is saved in `bot-state.json` (git-ignored), so it survives restarts.
+- Your own number/chat (`+91 90738 46974`) is **on by default** and all commands always work there, even if you pause it.
+- Friend chats and groups start **paused**. The bot sends nothing there — no AI, commands, away replies, auto-replies or spam warnings — until you send `!enable` in that chat.
+- `!enable`, `!disable` and `!status` always work for the owner in any chat, even paused ones. Other people are ignored silently.
+- State is stored per chat JID in `bot-state.json` (git-ignored) and survives restarts.
 
 ### Images
 
@@ -115,7 +118,7 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 - `imageModels` / `imageFallbackUrl` / `imageTimeoutMs` — image generation chain.
 - `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
 - `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
-- `botStateFile` — where the master on/off state is saved (`bot-state.json`).
+- `botStateFile` — where per-chat on/off states are saved (`bot-state.json`).
 - `systemPrompt` — CODEPLUS personality.
 
 Group replies are routed to the group JID while per-sender identity drives owner checks, spam tracking and AI memory.

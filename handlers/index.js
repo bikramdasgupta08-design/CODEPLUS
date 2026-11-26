@@ -6,12 +6,17 @@ const { generateImage } = require('../image');
 const logger = require('../logger');
 const { status: spamStatus } = require('./spam');
 const { list: autoReplyList } = require('./autoreply');
-const { enable, disable, status: masterStatus, isEnabled } = require('./master');
+const {
+  enable,
+  disable,
+  status: chatStatus,
+  isChatEnabled
+} = require('./chatstate');
 
 const handlers = {
   enable,
   disable,
-  status: masterStatus,
+  status: chatStatus,
 
   ping: async ({ sock, jid }) => send(sock, jid, 'pong 🏓'),
 
@@ -77,7 +82,7 @@ const handlers = {
     ].filter(Boolean);
 
     await send(sock, jid, [
-      `CODEPLUS master switch: ${isEnabled() ? 'ENABLED' : 'DISABLED'}.`,
+      `CODEPLUS in this chat: ${isChatEnabled(jid, config) ? 'ENABLED' : 'DISABLED'}.`,
       'CODEPLUS multi-AI is ready.',
       '• Normal messages get AI replies — no prefix needed.',
       `• Providers (in order): ${enabled.join(' > ') || 'none configured'}`,
@@ -95,12 +100,12 @@ const handlers = {
     await send(sock, jid, 'CODEPLUS memory cleared for this chat.');
   },
 
-  help: async ({ sock, jid }) => send(sock, jid, [
+  help: async ({ sock, jid, config }) => send(sock, jid, [
     'CODEPLUS — commands:',
-    `• Master switch: ${isEnabled() ? 'ENABLED' : 'DISABLED'} (send !enable to turn on)`,
-    '• !enable — Turn CODEPLUS on in all chats and groups (owner only)',
-    '• !disable — Turn CODEPLUS off everywhere (owner only)',
-    '• !status — Show master switch status (owner only)',
+    `• This chat: ${isChatEnabled(jid, config) ? 'ENABLED' : 'DISABLED'} (send !enable here)`,
+    '• !enable — Enable CODEPLUS in THIS chat only (owner only)',
+    '• !disable — Pause CODEPLUS in THIS chat only (owner only)',
+    '• !status — Show this chat\'s switch status (owner only)',
     '• (no prefix) — Chat with AI normally',
     '• !ping — Reply with pong',
     '• !id — Show the current chat ID',
