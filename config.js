@@ -12,7 +12,10 @@ module.exports = {
   prefix: '!',
 
   // Gemini model. Override with GEMINI_MODEL in .env if needed.
-  model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+  model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+
+  // Tried in order if the primary model is unavailable or overloaded.
+  fallbackModels: ['gemini-flash-lite-latest', 'gemini-3.5-flash'],
 
   apiKey: process.env.GEMINI_API_KEY || '',
 
