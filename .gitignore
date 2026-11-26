@@ -4,5 +4,6 @@ auth_info/
 bot-debug.log
 qr.txt
 autoreply.json
+bot-state.json
 tmp/
 *.log

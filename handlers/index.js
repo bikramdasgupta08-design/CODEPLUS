@@ -6,8 +6,13 @@ const { generateImage } = require('../image');
 const logger = require('../logger');
 const { status: spamStatus } = require('./spam');
 const { list: autoReplyList } = require('./autoreply');
+const { enable, disable, status: masterStatus, isEnabled } = require('./master');
 
 const handlers = {
+  enable,
+  disable,
+  status: masterStatus,
+
   ping: async ({ sock, jid }) => send(sock, jid, 'pong 🏓'),
 
   id: async ({ sock, jid }) => send(sock, jid, `Chat ID: ${jid}`),
@@ -72,7 +77,8 @@ const handlers = {
     ].filter(Boolean);
 
     await send(sock, jid, [
-      'CODEPLUS multi-AI is ACTIVE.',
+      `CODEPLUS master switch: ${isEnabled() ? 'ENABLED' : 'DISABLED'}.`,
+      'CODEPLUS multi-AI is ready.',
       '• Normal messages get AI replies — no prefix needed.',
       `• Providers (in order): ${enabled.join(' > ') || 'none configured'}`,
       `• Gemini models: ${[config.aiModel, ...config.aiFallbackModels].join(', ')}`,
@@ -91,6 +97,10 @@ const handlers = {
 
   help: async ({ sock, jid }) => send(sock, jid, [
     'CODEPLUS — commands:',
+    `• Master switch: ${isEnabled() ? 'ENABLED' : 'DISABLED'} (send !enable to turn on)`,
+    '• !enable — Turn CODEPLUS on in all chats and groups (owner only)',
+    '• !disable — Turn CODEPLUS off everywhere (owner only)',
+    '• !status — Show master switch status (owner only)',
     '• (no prefix) — Chat with AI normally',
     '• !ping — Reply with pong',
     '• !id — Show the current chat ID',

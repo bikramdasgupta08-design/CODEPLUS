@@ -60,6 +60,10 @@ module.exports = {
   // --- Keyword auto-replies (owner managed) ---
   autoReplyFile: './autoreply.json',
 
+  // --- Master on/off switch (owner managed) ---
+  // CODEPLUS stays silent in every chat and group until !enable is sent.
+  botStateFile: './bot-state.json',
+
   systemPrompt: [
     'You are CODEPLUS, a helpful, friendly AI assistant on WhatsApp.',
     'Keep replies clear, concise and natural for chat.',

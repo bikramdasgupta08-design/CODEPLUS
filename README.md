@@ -29,19 +29,22 @@ sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $(whoami) --hp $HOME
 
 ## 2. How to chat
 
-Just send a normal message:
+**First, the owner must send `!enable` once.** CODEPLUS starts disabled and ignores every chat and group until then. After that, just send a normal message:
 
 ```
 hey, what can you do?
 write a python function to reverse a string
 ```
 
-CODEPLUS replies with AI and remembers the last 20 messages per chat.
+CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!disable` any time to silence it everywhere; `!enable` turns it back on.
 
 ### Commands
 
 | Command | What it does |
 |---|---|
+| `!enable` | Turn CODEPLUS on in all chats/groups (owner only) |
+| `!disable` | Turn CODEPLUS off everywhere (owner only) |
+| `!status` | Show master switch status (owner only) |
 | `!help` | Show all commands |
 | `!ping` | Reply with pong |
 | `!id` | Show the current chat ID |
@@ -56,6 +59,18 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat.
 | `!aireset` | Clear AI memory for this chat |
 
 While `!away` is ON, incoming private messages get the away reply instead of AI.
+
+### Master on/off switch
+
+CODEPLUS starts **DISABLED**. Only the owner can change the switch, from any chat or group:
+
+```
+!enable    # bot replies in every chat and group
+!status    # check whether it is on or off
+!disable   # bot ignores every message everywhere
+```
+
+When disabled, the bot sends nothing at all — no AI, commands, away replies, auto-replies or spam warnings. `!enable`, `!disable` and `!status` still work for the owner; everyone else is ignored silently. The state is saved in `bot-state.json` (git-ignored), so it survives restarts.
 
 ### Images
 
@@ -100,6 +115,7 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 - `imageModels` / `imageFallbackUrl` / `imageTimeoutMs` — image generation chain.
 - `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
 - `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
+- `botStateFile` — where the master on/off state is saved (`bot-state.json`).
 - `systemPrompt` — CODEPLUS personality.
 
 Group replies are routed to the group JID while per-sender identity drives owner checks, spam tracking and AI memory.

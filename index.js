@@ -10,8 +10,13 @@ const handlers = require('./handlers');
 const { handleAwayMessage, state: awayState } = require('./handlers/away');
 const { checkIncoming } = require('./handlers/spam');
 const { findReply } = require('./handlers/autoreply');
+const { isEnabled } = require('./handlers/master');
+const { isOwner } = require('./handlers/util');
 const { askAI } = require('./ai');
 const logger = require('./logger');
+
+// These work even while CODEPLUS is disabled, so the owner can turn it back on.
+const MASTER_COMMANDS = new Set(['enable', 'disable', 'status']);
 
 let reconnecting = false;
 let pairingRequested = false;
@@ -176,7 +181,8 @@ async function handleMessage(sock, msg) {
     chatJid,
     senderJid,
     fromMe: msg.key.fromMe,
-    body
+    body,
+    master: isEnabled()
   });
   if (!body) return;
 
@@ -191,12 +197,36 @@ async function handleMessage(sock, msg) {
     }
   }
 
+  const isCommand = body.startsWith(config.prefix);
+  let command = '';
+  let args = [];
+  if (isCommand) {
+    const [rawCommand, ...rest] = body.slice(config.prefix.length).trim().split(/\s+/);
+    command = rawCommand.toLowerCase();
+    args = rest;
+  }
+
+  // Master switch always works for the owner, even while the bot is off.
+  // Non-owners are ignored silently so a disabled bot never reacts at all.
+  if (MASTER_COMMANDS.has(command)) {
+    if (isOwner(senderJid, config)) {
+      await handlers[command]({ sock, jid: chatJid, senderJid, args, body, msg, config });
+    } else {
+      logger.debug('MASTER_IGNORED', { chatJid, senderJid, command });
+    }
+    return;
+  }
+
+  // Master OFF: no replies, reactions, auto-replies or spam actions anywhere.
+  if (!isEnabled()) {
+    logger.debug('MASTER_OFF_IGNORE', { chatJid, senderJid, body });
+    return;
+  }
+
   // Rate-limit senders before commands or AI so spam cannot trigger either.
   if (await checkIncoming({ sock, chatJid, senderJid })) return;
 
-  if (body.startsWith(config.prefix)) {
-    const [rawCommand, ...args] = body.slice(config.prefix.length).trim().split(/\s+/);
-    const command = rawCommand.toLowerCase();
+  if (isCommand) {
     const handler = handlers[command];
 
     if (handler) {
