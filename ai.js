@@ -56,19 +56,19 @@ async function askGemini(text, history) {
   throw lastError || new Error('No Gemini model available');
 }
 
-async function askOpenAICompatible({ name, apiKey, model, baseUrl, text, history }) {
+async function askOpenAICompatible({ name, apiKey, model, url, text, history }) {
   const messages = [
     { role: 'system', content: config.systemPrompt },
     ...history.map(h => ({ role: h.role, content: h.text })),
     { role: 'user', content: text }
   ];
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ model, messages, temperature: 0.7 }),
     signal: AbortSignal.timeout(config.aiRequestTimeoutMs || 10000)
   });
@@ -95,7 +95,7 @@ async function askAI(jid, text) {
         name: 'Groq',
         apiKey: config.groqApiKey,
         model: config.groqModel,
-        baseUrl: 'https://api.groq.com/openai/v1',
+        url: 'https://api.groq.com/openai/v1/chat/completions',
         text,
         history
       })
@@ -108,7 +108,7 @@ async function askAI(jid, text) {
         name: 'OpenRouter',
         apiKey: config.openrouterApiKey,
         model: config.openrouterModel,
-        baseUrl: 'https://openrouter.ai/api/v1',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
         text,
         history
       })
@@ -121,12 +121,24 @@ async function askAI(jid, text) {
         name: 'OpenAI',
         apiKey: config.openaiApiKey,
         model: config.openaiModel,
-        baseUrl: 'https://api.openai.com/v1',
+        url: 'https://api.openai.com/v1/chat/completions',
         text,
         history
       })
     });
   }
+
+  // Keyless last resort: Pollinations free text API (OpenAI-compatible).
+  providers.push({
+    name: 'Pollinations',
+    run: () => askOpenAICompatible({
+      name: 'Pollinations',
+      model: 'openai',
+      url: 'https://text.pollinations.ai/openai',
+      text,
+      history
+    })
+  });
 
   if (!providers.length) {
     throw new Error('No AI provider configured. Add GEMINI_API_KEY to .env.');

@@ -77,8 +77,9 @@ CODEPLUS tries providers in this order and uses the first one that answers:
 2. **Groq** — `GROQ_API_KEY`, model from `GROQ_MODEL`
 3. **OpenRouter** — `OPENROUTER_API_KEY`, model from `OPENROUTER_MODEL`
 4. **OpenAI** — `OPENAI_API_KEY`, model from `OPENAI_MODEL`
+5. **Pollinations** — keyless free fallback, always available
 
-Add any keys you have to `.env` (or Render environment). If a provider is down, overloaded, or rate-limited, the next one answers automatically. `!ai` shows which providers are enabled.
+Add any keys you have to `.env` (or Render environment). If a provider is down, overloaded, or rate-limited, the next one answers automatically — including a keyless last resort. `!ai` shows which providers are enabled.
 
 ## 4. Deploying to Render
 

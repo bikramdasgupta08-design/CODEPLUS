@@ -20,7 +20,8 @@ const handlers = {
       config.geminiApiKey && 'Gemini',
       config.groqApiKey && 'Groq',
       config.openrouterApiKey && 'OpenRouter',
-      config.openaiApiKey && 'OpenAI'
+      config.openaiApiKey && 'OpenAI',
+      'Pollinations (keyless)'
     ].filter(Boolean);
 
     await send(sock, jid, [
