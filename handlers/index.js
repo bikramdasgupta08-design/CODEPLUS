@@ -3,6 +3,7 @@
 const send = (sock, jid, text) => sock.sendMessage(jid, { text });
 const { resetHistory, askOnce } = require('../ai');
 const { generateImage } = require('../image');
+const { istNow } = require('../web');
 const logger = require('../logger');
 const { status: spamStatus } = require('./spam');
 const { list: autoReplyList } = require('./autoreply');
@@ -27,7 +28,7 @@ const handlers = {
     await send(sock, jid, text ? text : 'Usage: !echo <text>');
   },
 
-  time: async ({ sock, jid }) => send(sock, jid, new Date().toLocaleString()),
+  time: async ({ sock, jid }) => send(sock, jid, `🕐 ${istNow()}`),
 
   img: async ({ sock, jid, args }) => {
     const prompt = args.join(' ').trim();
@@ -88,6 +89,8 @@ const handlers = {
       `• Providers (in order): ${enabled.join(' > ') || 'none configured'}`,
       `• Gemini models: ${[config.aiModel, ...config.aiFallbackModels].join(', ')}`,
       `• Images: Gemini > Pollinations (keyless)`,
+      `• Web lookup: ${config.webSearchEnabled ? 'on (Wikipedia + Google News)' : 'off'}`,
+      `• Time zone: ${config.timeZone} (IST)`,
       `• Memory: last ${config.aiHistoryLength} messages per chat`,
       `• Spam guard: ${spamStatus().enabled ? 'on' : 'off'}`,
       `• Auto-reply rules: ${autoReplyList().length}`,

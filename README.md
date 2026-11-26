@@ -49,7 +49,7 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!dis
 | `!ping` | Reply with pong |
 | `!id` | Show the current chat ID |
 | `!echo <text>` | Echo text back |
-| `!time` | Show date/time |
+| `!time` | Show current date/time in IST (India) |
 | `!img <prompt>` | Generate and send an image |
 | `!improve <text>` | Rewrite text more clearly (no chat-memory pollution) |
 | `!away [off\|message]` | Away auto-reply (owner only) |
@@ -119,6 +119,8 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 - `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
 - `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
 - `botStateFile` — where per-chat on/off states are saved (`bot-state.json`).
+- `timeZone` — `Asia/Kolkata`; `!time` and AI date/time context use IST.
+- `webSearchEnabled` / `webContextTimeoutMs` / `webCacheMs` / `webMaxChars` — fresh web context for replies.
 - `systemPrompt` — CODEPLUS personality.
 
 Group replies are routed to the group JID while per-sender identity drives owner checks, spam tracking and AI memory.
@@ -140,6 +142,10 @@ CODEPLUS tries providers in this order and uses the first one that answers:
 5. **Pollinations** — keyless free fallback, always available
 
 Add any keys you have to `.env` (or Render environment). If a provider is down, overloaded, or rate-limited, the next one answers automatically — including a keyless last resort. `!ai` shows which providers are enabled.
+
+### Fresh information from the web
+
+Before answering a normal message, CODEPLUS fetches a short, current context block from **Wikipedia** and **Google News** (India edition) and includes it in the AI prompt, along with the current IST date/time. This lets replies use recent information instead of only older training data. Lookups are cached for 10 minutes and fail silently, so a slow or blocked source never stops the bot. Disable with `webSearchEnabled: false` in `config.js`. `!ai` shows `Web lookup: on/off`.
 
 ## 4. Deploying to Render
 

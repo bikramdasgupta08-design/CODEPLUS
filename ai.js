@@ -2,6 +2,7 @@
 
 const config = require('./config');
 const logger = require('./logger');
+const { buildContext, istNow } = require('./web');
 
 const histories = new Map();
 
@@ -167,10 +168,19 @@ async function runProviders(text, history, systemPrompt) {
   throw lastError || new Error('All AI providers failed');
 }
 
-// Main conversation path: keeps per-chat history.
+// Main conversation path: keeps per-chat history and adds fresh web context.
 async function askAI(jid, text) {
   const history = getHistory(jid);
-  const result = await runProviders(text, history, config.systemPrompt);
+  const context = await buildContext(text);
+  const systemPrompt = [
+    config.systemPrompt,
+    `Current date and time in India (IST): ${istNow()}. Use this for any date or time question.`,
+    context
+      ? 'Latest information fetched from the web (use it when relevant; prefer it over older training data):\n' + context
+      : ''
+  ].filter(Boolean).join('\n\n');
+
+  const result = await runProviders(text, history, systemPrompt);
   history.push({ role: 'user', text }, { role: 'assistant', text: result.text });
   trimHistory(history);
   return result.text;

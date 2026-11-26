@@ -35,6 +35,15 @@ module.exports = {
   aiReplyInGroups: true,
   aiRequestTimeoutMs: 10000,
 
+  // Time shown by !time and injected into AI prompts (Indian Standard Time).
+  timeZone: 'Asia/Kolkata',
+
+  // Fresh web context (Wikipedia + Google News) for AI replies.
+  webSearchEnabled: true,
+  webContextTimeoutMs: 6000,
+  webCacheMs: 10 * 60 * 1000,
+  webMaxChars: 1400,
+
   // Extra AI providers. Add any key you have; they are tried in order after
   // Gemini. All use the OpenAI-compatible chat-completions format.
   groqApiKey: process.env.GROQ_API_KEY || '',
