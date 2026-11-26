@@ -17,6 +17,9 @@ module.exports = {
   // Tried in order if the primary model is unavailable or overloaded.
   fallbackModels: ['gemini-flash-lite-latest', 'gemini-3.5-flash'],
 
+  // Abort a slow model quickly so fallback can take over.
+  requestTimeoutMs: 10000,
+
   apiKey: process.env.GEMINI_API_KEY || '',
 
   // Reply to messages in groups as well as private chats.

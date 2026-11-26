@@ -33,7 +33,8 @@ async function askGemini(jid, text) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: config.systemPrompt }] },
           contents
-        })
+        }),
+        signal: AbortSignal.timeout(config.requestTimeoutMs || 10000)
       });
 
       const data = await response.json();
