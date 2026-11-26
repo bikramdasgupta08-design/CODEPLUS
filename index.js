@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -87,21 +88,25 @@ async function start() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    // Never print a big QR on Render (logs are hard to scan). Pairing uses a
-    // short 8-character code instead. QR is only a local fallback.
-    if (qr && !config.phoneNumber) {
-      if (process.env.PORT) {
-        logger.info('Set PHONE_NUMBER in the environment to pair with a short code.');
-      } else {
+    // "registered" stays false for QR-paired sessions, and a stale pairing
+    // request leaves me.name = "~". Only a real linked account counts.
+    const hasSession = Boolean(state.creds.me?.id) && state.creds.me.name !== '~';
+
+    if (qr && !hasSession) {
+      const qrFile = path.join(__dirname, 'qr.txt');
+      try {
+        fs.writeFileSync(qrFile, `${qr}\n`);
+      } catch (error) {
+        logger.warn('Could not save QR:', error.message);
+      }
+      logger.info(`QR ready. View it with: cat ${qrFile}`);
+      if (!config.usePairingCode) {
         logger.info('Scan this QR with WhatsApp -> Linked Devices');
         qrcode.generate(qr, { small: true });
       }
     }
 
-    // "registered" stays false for QR-paired sessions, and a stale pairing
-    // request leaves me.name = "~". Only a real linked account counts.
-    const hasSession = Boolean(state.creds.me?.id) && state.creds.me.name !== '~';
-    if (connection === 'connecting' && config.phoneNumber && !hasSession && !pairingRequested) {
+    if (connection === 'connecting' && config.usePairingCode && config.phoneNumber && !hasSession && !pairingRequested) {
       pairingRequested = true;
       await new Promise(resolve => setTimeout(resolve, 2000));
       await requestPairingCode(sock);

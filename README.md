@@ -16,7 +16,7 @@ cp .env.example .env
 npm start
 ```
 
-Scan the QR with **WhatsApp → Linked Devices**. The session is saved in `auth_info/`.
+Scan the QR with **WhatsApp → Linked Devices → Link a device**. It is printed in the terminal and also saved to `qr.txt` (`cat qr.txt`). The session is saved in `auth_info/`.
 
 Run 24/7 with pm2:
 
@@ -96,18 +96,14 @@ This repo binds to `process.env.PORT` on `0.0.0.0`, so a Render **Web Service** 
    # OPENROUTER_API_KEY=...
    # OPENAI_API_KEY=...
    ```
-4. Deploy. The logs will show a short line:
-   ```
-   CODEPLUS pairing code: XXXXXXXX
-   ```
-5. On your phone: **WhatsApp → Linked Devices → Link with phone number → enter that code**.
+4. Deploy. The QR is printed in the Render logs (and saved to `qr.txt` locally). On your phone: **WhatsApp → Linked Devices → Link a device → scan the QR**.
 
-No QR is printed on Render, so the logs stay small.
+If you prefer a short 8-character code instead, set `USE_PAIRING_CODE=true` and look for `CODEPLUS pairing code: XXXXXXXX` in the logs.
 
 ### Important Render limitations
 
 - **Free web services sleep after 15 minutes with no traffic** and take ~1 minute to wake. A pinger that keeps it awake consumes almost the entire 750-hour monthly quota.
-- **Free services have no persistent disk.** Every sleep/redeploy deletes `auth_info/`, so you must pair again (a new code appears in the logs).
+- **Free services have no persistent disk.** Every sleep/redeploy deletes `auth_info/`, so you must pair again (a new QR appears in the logs).
 - There is **no free background worker** on Render.
 - Do not run a second copy paired to the same WhatsApp account — it will kick the other session into a reconnect loop.
 

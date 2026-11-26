@@ -9,8 +9,9 @@ module.exports = {
   // Folder where the WhatsApp login is stored. Keep it private.
   authDir: './auth_info',
 
-  // Use WhatsApp's 8-character pairing code instead of a QR code.
-  // Digits only, with country code. Set PHONE_NUMBER in .env to override.
+  // Pairing mode: QR is the default (most reliable).
+  // Set USE_PAIRING_CODE=true in .env only if you prefer an 8-character code.
+  usePairingCode: String(process.env.USE_PAIRING_CODE || '').toLowerCase() === 'true',
   phoneNumber: process.env.PHONE_NUMBER || '919073846974',
 
   // Only these JIDs may use admin commands (e.g. !away).
