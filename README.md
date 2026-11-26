@@ -65,9 +65,20 @@ While `!away` is ON, incoming private messages get the away reply instead of AI.
 
 `.env`:
 
-- `GEMINI_API_KEY` — required.
+- `GEMINI_API_KEY` — required (or add one of the other providers below).
 - `GEMINI_MODEL` — optional override.
 - `PHONE_NUMBER` — digits only with country code, used for pairing (default `919073846974`).
+
+### Multi-AI fallback
+
+CODEPLUS tries providers in this order and uses the first one that answers:
+
+1. **Gemini** — `GEMINI_API_KEY` (also tries 3 Gemini models in order)
+2. **Groq** — `GROQ_API_KEY`, model from `GROQ_MODEL`
+3. **OpenRouter** — `OPENROUTER_API_KEY`, model from `OPENROUTER_MODEL`
+4. **OpenAI** — `OPENAI_API_KEY`, model from `OPENAI_MODEL`
+
+Add any keys you have to `.env` (or Render environment). If a provider is down, overloaded, or rate-limited, the next one answers automatically. `!ai` shows which providers are enabled.
 
 ## 4. Deploying to Render
 
@@ -79,6 +90,10 @@ This repo binds to `process.env.PORT` on `0.0.0.0`, so a Render **Web Service** 
    ```
    GEMINI_API_KEY=your_key
    PHONE_NUMBER=919073846974
+   # optional extra AI providers:
+   # GROQ_API_KEY=...
+   # OPENROUTER_API_KEY=...
+   # OPENAI_API_KEY=...
    ```
 4. Deploy. The logs will show a short line:
    ```

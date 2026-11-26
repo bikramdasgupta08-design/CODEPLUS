@@ -33,6 +33,16 @@ module.exports = {
   aiHistoryLength: 20,
   aiReplyInGroups: false,
   aiRequestTimeoutMs: 10000,
+
+  // Extra AI providers. Add any key you have; they are tried in order after
+  // Gemini. All use the OpenAI-compatible chat-completions format.
+  groqApiKey: process.env.GROQ_API_KEY || '',
+  groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterModel: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+
   systemPrompt: [
     'You are CODEPLUS, a helpful, friendly AI assistant on WhatsApp.',
     'Keep replies clear, concise and natural for chat.',

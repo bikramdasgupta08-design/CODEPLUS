@@ -1,12 +1,13 @@
 'use strict';
 
+const fs = require('fs');
 const http = require('http');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const config = require('./config');
 const handlers = require('./handlers');
 const { handleAwayMessage, state: awayState } = require('./handlers/away');
-const { askGemini, resetHistory } = require('./ai');
+const { askAI, resetHistory } = require('./ai');
 const logger = require('./logger');
 
 let reconnecting = false;
@@ -97,9 +98,9 @@ async function start() {
       }
     }
 
-    // "registered" is only set by the pairing-code flow, so it stays false
-    // for QR-paired sessions. Check for a linked account instead.
-    const hasSession = Boolean(state.creds.me?.id);
+    // "registered" stays false for QR-paired sessions, and a stale pairing
+    // request leaves me.name = "~". Only a real linked account counts.
+    const hasSession = Boolean(state.creds.me?.id) && state.creds.me.name !== '~';
     if (connection === 'connecting' && config.phoneNumber && !hasSession && !pairingRequested) {
       pairingRequested = true;
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -110,7 +111,13 @@ async function start() {
       pairingRequested = false;
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) {
-        logger.warn('Logged out. Delete auth_info/ and restart to pair again.');
+        logger.warn('Logged out. Clearing stale session; a fresh pairing code will be generated.');
+        try {
+          fs.rmSync(config.authDir, { recursive: true, force: true });
+        } catch (error) {
+          logger.warn('Could not clear auth folder:', error.message);
+        }
+        process.exit(0);
       } else if (!reconnecting) {
         reconnecting = true;
         logger.warn('Connection closed, reconnecting...');
@@ -200,7 +207,7 @@ async function handleMessage(sock, msg) {
   if (jid.endsWith('@g.us') && !config.aiReplyInGroups) return;
 
   try {
-    const reply = await askGemini(jid, body);
+    const reply = await askAI(jid, body);
     await sock.sendMessage(jid, { text: reply });
     logger.debug('AI_REPLY', { jid, reply });
   } catch (error) {

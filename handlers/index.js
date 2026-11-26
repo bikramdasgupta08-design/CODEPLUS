@@ -15,14 +15,23 @@ const handlers = {
 
   time: async ({ sock, jid }) => send(sock, jid, new Date().toLocaleString()),
 
-  ai: async ({ sock, jid, config }) => send(sock, jid, [
-    'CODEPLUS AI is ACTIVE.',
-    '• Normal messages get AI replies — no prefix needed.',
-    `• Model: ${config.aiModel}`,
-    `• Fallbacks: ${config.aiFallbackModels.join(', ')}`,
-    `• Memory: last ${config.aiHistoryLength} messages per chat`,
-    `• Groups: ${config.aiReplyInGroups ? 'on' : 'off'}`
-  ].join('\n')),
+  ai: async ({ sock, jid, config }) => {
+    const enabled = [
+      config.geminiApiKey && 'Gemini',
+      config.groqApiKey && 'Groq',
+      config.openrouterApiKey && 'OpenRouter',
+      config.openaiApiKey && 'OpenAI'
+    ].filter(Boolean);
+
+    await send(sock, jid, [
+      'CODEPLUS multi-AI is ACTIVE.',
+      '• Normal messages get AI replies — no prefix needed.',
+      `• Providers (in order): ${enabled.join(' > ') || 'none configured'}`,
+      `• Gemini models: ${[config.aiModel, ...config.aiFallbackModels].join(', ')}`,
+      `• Memory: last ${config.aiHistoryLength} messages per chat`,
+      `• Groups: ${config.aiReplyInGroups ? 'on' : 'off'}`
+    ].join('\n'));
+  },
 
   aireset: async ({ sock, jid }) => {
     resetHistory(jid);
