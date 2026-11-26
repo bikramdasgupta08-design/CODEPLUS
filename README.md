@@ -96,7 +96,7 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 - `ownerJids` — JIDs/LIDs allowed to use owner commands. Includes the official number and its WhatsApp LID alias.
 - `aiModel` / `aiFallbackModels` — Gemini models (slow or overloaded models are aborted after 10s).
 - `aiHistoryLength` — chat memory size.
-- `aiReplyInGroups` — set `true` to answer in groups (default: DMs only).
+- `aiReplyInGroups` — `true` answers in groups (current setting); set `false` for DMs only.
 - `imageModels` / `imageFallbackUrl` / `imageTimeoutMs` — image generation chain.
 - `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
 - `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
