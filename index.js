@@ -97,7 +97,10 @@ async function start() {
       }
     }
 
-    if (connection === 'connecting' && config.phoneNumber && !state.creds.registered && !pairingRequested) {
+    // "registered" is only set by the pairing-code flow, so it stays false
+    // for QR-paired sessions. Check for a linked account instead.
+    const hasSession = Boolean(state.creds.me?.id);
+    if (connection === 'connecting' && config.phoneNumber && !hasSession && !pairingRequested) {
       pairingRequested = true;
       await new Promise(resolve => setTimeout(resolve, 2000));
       await requestPairingCode(sock);
