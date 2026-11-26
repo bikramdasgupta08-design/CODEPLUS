@@ -1,27 +1,22 @@
 'use strict';
 
+const http = require('http');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const config = require('./config');
+const handlers = require('./handlers');
+const { handleAwayMessage, state: awayState } = require('./handlers/away');
 const { askGemini, resetHistory } = require('./ai');
 const logger = require('./logger');
 
 let reconnecting = false;
 let baileys;
+const outgoingIds = new Set();
+const outgoingTexts = new Map();
 
 async function loadBaileys() {
   if (!baileys) baileys = await import('@whiskeysockets/baileys');
   return baileys;
-}
-
-function digits(jid) {
-  return (jid || '').split('@')[0].replace(/\D/g, '');
-}
-
-function isOwner(jid) {
-  if (!config.ownerJids.length) return true;
-  const sender = digits(jid);
-  return config.ownerJids.some(owner => digits(owner) === sender);
 }
 
 async function start() {
@@ -44,17 +39,37 @@ async function start() {
   const sock = makeWASocket({
     version,
     auth: state,
-    browser: [config.botName, 'Chrome', '1.0.0'],
+    browser: ['CODEPLUS', 'Chrome', '1.0.0'],
     printQRInTerminal: false,
     logger: pino({ level: 'warn' }),
+    // Required for v7 to build LID <-> phone-number mappings.
     shouldSyncHistoryMessage: ({ syncType }) => syncType !== 2
   });
+
+  // Remember every message we send so we never feed our own replies back into AI.
+  const originalSend = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (...args) => {
+    const result = await originalSend(...args);
+    const id = result?.key?.id;
+    if (id) {
+      outgoingIds.add(id);
+      if (outgoingIds.size > 500) outgoingIds.delete(outgoingIds.values().next().value);
+    }
+    // Also remember the text: WhatsApp sometimes echoes a sent message back
+    // with a different id, and history sync can replay old bot replies.
+    const text = typeof args?.[1]?.text === 'string' ? args[1].text.trim() : '';
+    if (text) {
+      outgoingTexts.set(text, Date.now());
+      if (outgoingTexts.size > 500) outgoingTexts.delete(outgoingTexts.keys().next().value);
+    }
+    return result;
+  };
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      logger.info(`Scan this QR to link ${config.botName}`);
+      logger.info('Scan this QR with WhatsApp -> Linked Devices');
       qrcode.generate(qr, { small: true });
     }
 
@@ -73,11 +88,13 @@ async function start() {
 
     if (connection === 'open') {
       reconnecting = false;
-      logger.info(`${config.botName} is ready as ${sock.user?.name || 'WhatsApp'}`);
+      logger.info(`Bot is ready as ${sock.user?.name || 'WhatsApp'}`);
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    logger.debug('UPSERT', { type, count: messages?.length });
+
     for (const msg of messages || []) {
       try {
         await handleMessage(sock, msg);
@@ -91,86 +108,83 @@ async function start() {
 }
 
 async function handleMessage(sock, msg) {
-  if (!msg.message || msg.key.fromMe) return;
+  if (!msg.message) return;
 
+  // Prefer the real phone number when WhatsApp supplies it alongside an @lid JID.
   const jid = msg.key.senderPn || msg.key.participantPn || msg.key.remoteJid;
   if (!jid || jid === 'status@broadcast') return;
 
-  if (jid.endsWith('@g.us') && !config.replyInGroups) return;
-
+  const content = msg.message;
   const body = (
-    msg.message.conversation ||
-    msg.message.extendedTextMessage?.text ||
-    msg.message.imageMessage?.caption ||
-    msg.message.videoMessage?.caption ||
+    content.conversation ||
+    content.extendedTextMessage?.text ||
+    content.imageMessage?.caption ||
+    content.videoMessage?.caption ||
     ''
   ).trim();
 
+  logger.debug('INCOMING', {
+    jid,
+    remoteJid: msg.key.remoteJid,
+    fromMe: msg.key.fromMe,
+    body
+  });
   if (!body) return;
 
-  logger.debug('INCOMING', { jid, body });
-
-  if (body.startsWith(config.prefix)) {
-    await handleCommand(sock, jid, body);
-    return;
-  }
-
-  const reply = await askGemini(jid, body);
-  await sock.sendMessage(jid, { text: reply });
-  logger.debug('REPLY', { jid, reply });
-}
-
-async function handleCommand(sock, jid, body) {
-  const [rawCommand, ...args] = body.slice(config.prefix.length).trim().split(/\s+/);
-  const command = rawCommand.toLowerCase();
-
-  if (command === 'help') {
-    await sock.sendMessage(jid, {
-      text: [
-        `${config.botName} commands (owner only):`,
-        `• ${config.prefix}help — Show this list`,
-        `• ${config.prefix}reset — Clear this chat's memory`,
-        `• ${config.prefix}prompt <text> — Change the system prompt`,
-        `• ${config.prefix}status — Show current settings`
-      ].join('\n')
-    });
-    return;
-  }
-
-  if (!isOwner(jid)) {
-    await sock.sendMessage(jid, { text: 'That command is only available to the owner.' });
-    return;
-  }
-
-  if (command === 'reset') {
-    resetHistory(jid);
-    await sock.sendMessage(jid, { text: 'Conversation memory cleared.' });
-    return;
-  }
-
-  if (command === 'prompt') {
-    const value = args.join(' ').trim();
-    if (!value) {
-      await sock.sendMessage(jid, { text: `Usage: ${config.prefix}prompt <text>` });
+  // Never feed the bot's own replies back into the loop. The owner's own
+  // self-chat messages are fromMe too, but they are not in these collections.
+  if (msg.key.fromMe) {
+    if (outgoingIds.has(msg.key.id)) return;
+    const sentAt = outgoingTexts.get(body);
+    if (sentAt && Date.now() - sentAt < 10 * 60 * 1000) {
+      outgoingTexts.delete(body);
       return;
     }
-    config.systemPrompt = value;
-    await sock.sendMessage(jid, { text: 'System prompt updated.' });
+  }
+
+  if (body.startsWith(config.prefix)) {
+    const [rawCommand, ...args] = body.slice(config.prefix.length).trim().split(/\s+/);
+    const command = rawCommand.toLowerCase();
+    const handler = handlers[command];
+
+    if (handler) {
+      await handler({ sock, jid, args, body, msg, config });
+    } else {
+      await sock.sendMessage(jid, { text: `Unknown command. Type ${config.prefix}help for a list.` });
+    }
     return;
   }
 
-  if (command === 'status') {
+  // While away mode is ON, incoming private messages get the away reply
+  // instead of an AI answer. The owner's self-chat still uses AI.
+  if (!msg.key.fromMe && !jid.endsWith('@g.us') && awayState.enabled) {
+    await handleAwayMessage({ sock, jid, config });
+    return;
+  }
+
+  // Normal chat = CODEPLUS AI, no prefix required.
+  if (jid.endsWith('@g.us') && !config.aiReplyInGroups) return;
+
+  try {
+    const reply = await askGemini(jid, body);
+    await sock.sendMessage(jid, { text: reply });
+    logger.debug('AI_REPLY', { jid, reply });
+  } catch (error) {
+    logger.error('AI reply failed:', error);
     await sock.sendMessage(jid, {
-      text: `${config.botName} | model: ${config.model} | groups: ${config.replyInGroups ? 'on' : 'off'}`
-    });
-    return;
+      text: 'Sorry, CODEPLUS is temporarily unavailable. Please try again in a moment.'
+    }).catch(() => {});
   }
-
-  await sock.sendMessage(jid, { text: `Unknown command. Type ${config.prefix}help.` });
 }
 
-if (!config.apiKey) {
-  logger.warn('GEMINI_API_KEY is not set. Add it to .env before chatting.');
+// Render Web Services must bind a port or the deploy is killed. This is a
+// no-op locally (PORT is only set by hosting platforms).
+if (process.env.PORT) {
+  const port = Number(process.env.PORT) || 10000;
+  http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('CODEPLUS is running');
+  }).listen(port, '0.0.0.0', () => logger.info(`Health server listening on port ${port}`));
 }
 
 process.on('unhandledRejection', reason => {

@@ -1,8 +1,8 @@
 {
-  "name": "codeplus-wa-ai-bot",
+  "name": "codeplus-wa-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "CODEPLUS - AI WhatsApp chatbot powered by Baileys and Gemini",
+  "description": "CODEPLUS - one WhatsApp bot with ! commands and no-prefix AI chat",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
