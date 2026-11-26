@@ -18,7 +18,7 @@ function trimHistory(history) {
   while (history.length > config.aiHistoryLength * 2) history.shift();
 }
 
-async function askGemini(text, history) {
+async function askGemini(text, history, systemPrompt) {
   const models = [config.aiModel, ...config.aiFallbackModels.filter(m => m !== config.aiModel)];
   const contents = [
     ...history.map(h => ({
@@ -36,7 +36,7 @@ async function askGemini(text, history) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: config.systemPrompt }] },
+          systemInstruction: { parts: [{ text: systemPrompt }] },
           contents
         }),
         signal: AbortSignal.timeout(config.aiRequestTimeoutMs || 10000)
@@ -56,9 +56,9 @@ async function askGemini(text, history) {
   throw lastError || new Error('No Gemini model available');
 }
 
-async function askOpenAICompatible({ name, apiKey, model, url, text, history }) {
+async function askOpenAICompatible({ name, apiKey, model, url, text, history, systemPrompt }) {
   const messages = [
-    { role: 'system', content: config.systemPrompt },
+    { role: 'system', content: systemPrompt },
     ...history.map(h => ({ role: h.role, content: h.text })),
     { role: 'user', content: text }
   ];
@@ -81,12 +81,14 @@ async function askOpenAICompatible({ name, apiKey, model, url, text, history }) 
   return reply;
 }
 
-async function askAI(jid, text) {
-  const history = getHistory(jid);
+function buildProviders(text, history, systemPrompt) {
   const providers = [];
 
   if (config.geminiApiKey) {
-    providers.push({ name: 'Gemini', run: () => askGemini(text, history) });
+    providers.push({
+      name: 'Gemini',
+      run: () => askGemini(text, history, systemPrompt)
+    });
   }
   if (config.groqApiKey) {
     providers.push({
@@ -97,7 +99,8 @@ async function askAI(jid, text) {
         model: config.groqModel,
         url: 'https://api.groq.com/openai/v1/chat/completions',
         text,
-        history
+        history,
+        systemPrompt
       })
     });
   }
@@ -110,7 +113,8 @@ async function askAI(jid, text) {
         model: config.openrouterModel,
         url: 'https://openrouter.ai/api/v1/chat/completions',
         text,
-        history
+        history,
+        systemPrompt
       })
     });
   }
@@ -123,7 +127,8 @@ async function askAI(jid, text) {
         model: config.openaiModel,
         url: 'https://api.openai.com/v1/chat/completions',
         text,
-        history
+        history,
+        systemPrompt
       })
     });
   }
@@ -136,22 +141,23 @@ async function askAI(jid, text) {
       model: 'openai',
       url: 'https://text.pollinations.ai/openai',
       text,
-      history
+      history,
+      systemPrompt
     })
   });
 
-  if (!providers.length) {
-    throw new Error('No AI provider configured. Add GEMINI_API_KEY to .env.');
-  }
+  return providers;
+}
 
+async function runProviders(text, history, systemPrompt) {
+  const providers = buildProviders(text, history, systemPrompt);
   let lastError;
+
   for (const provider of providers) {
     try {
       const reply = await provider.run();
-      history.push({ role: 'user', text }, { role: 'assistant', text: reply });
-      trimHistory(history);
-      logger.debug('AI_PROVIDER', { jid, provider: provider.name });
-      return reply;
+      logger.debug('AI_PROVIDER', { provider: provider.name });
+      return { text: reply, provider: provider.name };
     } catch (error) {
       lastError = error;
       logger.warn(`${provider.name} failed:`, error.message);
@@ -161,4 +167,19 @@ async function askAI(jid, text) {
   throw lastError || new Error('All AI providers failed');
 }
 
-module.exports = { askAI, askGemini, resetHistory, getHistory };
+// Main conversation path: keeps per-chat history.
+async function askAI(jid, text) {
+  const history = getHistory(jid);
+  const result = await runProviders(text, history, config.systemPrompt);
+  history.push({ role: 'user', text }, { role: 'assistant', text: result.text });
+  trimHistory(history);
+  return result.text;
+}
+
+// One-shot request (e.g. !improve). Does not touch conversation history.
+async function askOnce(text, systemPrompt) {
+  const result = await runProviders(text, [], systemPrompt || config.systemPrompt);
+  return result.text;
+}
+
+module.exports = { askAI, askOnce, askGemini, resetHistory, getHistory };

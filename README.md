@@ -3,9 +3,9 @@
 One bot, one WhatsApp login:
 
 - **Normal text → AI reply.** No prefix needed.
-- **`!` commands → controls** (`!help`, `!away`, `!ai`, `!aireset`, etc.).
+- **`!` commands → controls** (`!help`, `!img`, `!improve`, `!spam`, `!autoreply`, `!ai`, etc.).
 
-Built with Baileys (no browser/Chrome needed) and Google Gemini.
+Built with Baileys (no browser/Chrome needed), multi-provider AI, and keyless image generation.
 
 ## 1. Local setup
 
@@ -47,11 +47,47 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat.
 | `!id` | Show the current chat ID |
 | `!echo <text>` | Echo text back |
 | `!time` | Show date/time |
+| `!img <prompt>` | Generate and send an image |
+| `!improve <text>` | Rewrite text more clearly (no chat-memory pollution) |
 | `!away [off\|message]` | Away auto-reply (owner only) |
-| `!ai` | Show AI model/status |
+| `!spam [status\|on\|off\|unblock]` | Spam control / temporary blocks (owner only) |
+| `!autoreply [add\|remove\|list\|on\|off]` | Keyword auto-replies (owner only) |
+| `!ai` | Show AI/image/spam status |
 | `!aireset` | Clear AI memory for this chat |
 
 While `!away` is ON, incoming private messages get the away reply instead of AI.
+
+### Images
+
+`!img <prompt>` tries Gemini image models first, then a keyless Pollinations fallback (no extra key needed). Your free Gemini key may have **zero image quota** — in that case the fallback handles it automatically. Pollinations' free tier allows about one image per 45 seconds, so CODEPLUS spaces requests and honors the server's retry delay; generation can take ~30 seconds.
+
+### Keyword auto-replies
+
+Owner-only examples:
+
+```
+!autoreply add price | Our plans start at ₹99
+!autoreply add timing | We are open 9am–6pm
+!autoreply list
+!autoreply remove price
+!autoreply off
+```
+
+Matching is case-insensitive substring matching. Rules are stored in `autoreply.json` (git-ignored) and checked before AI.
+
+### Spam control
+
+Enabled by default: more than 8 messages in 10 seconds from one sender gets them temporarily muted for 10 minutes and blocked on WhatsApp. Owner commands:
+
+```
+!spam status
+!spam off      # disable protection
+!spam on       # re-enable
+!spam unblock <jid>
+!spam unblock  # unblock everyone muted
+```
+
+Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBlock` in `config.js`. Owner numbers are always exempt.
 
 ## 3. Configuration
 
@@ -61,7 +97,12 @@ While `!away` is ON, incoming private messages get the away reply instead of AI.
 - `aiModel` / `aiFallbackModels` — Gemini models (slow or overloaded models are aborted after 10s).
 - `aiHistoryLength` — chat memory size.
 - `aiReplyInGroups` — set `true` to answer in groups (default: DMs only).
+- `imageModels` / `imageFallbackUrl` / `imageTimeoutMs` — image generation chain.
+- `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
+- `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
 - `systemPrompt` — CODEPLUS personality.
+
+Group replies are routed to the group JID while per-sender identity drives owner checks, spam tracking and AI memory.
 
 `.env`:
 

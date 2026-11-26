@@ -8,7 +8,9 @@ const qrcode = require('qrcode-terminal');
 const config = require('./config');
 const handlers = require('./handlers');
 const { handleAwayMessage, state: awayState } = require('./handlers/away');
-const { askAI, resetHistory } = require('./ai');
+const { checkIncoming } = require('./handlers/spam');
+const { findReply } = require('./handlers/autoreply');
+const { askAI } = require('./ai');
 const logger = require('./logger');
 
 let reconnecting = false;
@@ -75,8 +77,7 @@ async function start() {
       outgoingIds.add(id);
       if (outgoingIds.size > 500) outgoingIds.delete(outgoingIds.values().next().value);
     }
-    // Also remember the text: WhatsApp sometimes echoes a sent message back
-    // with a different id, and history sync can replay old bot replies.
+    // WhatsApp sometimes echoes a sent message back with a different id.
     const text = typeof args?.[1]?.text === 'string' ? args[1].text.trim() : '';
     if (text) {
       outgoingTexts.set(text, Date.now());
@@ -116,7 +117,7 @@ async function start() {
       pairingRequested = false;
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) {
-        logger.warn('Logged out. Clearing stale session; a fresh pairing code will be generated.');
+        logger.warn('Logged out. Clearing stale session; a fresh QR will be generated.');
         try {
           fs.rmSync(config.authDir, { recursive: true, force: true });
         } catch (error) {
@@ -156,9 +157,11 @@ async function start() {
 async function handleMessage(sock, msg) {
   if (!msg.message) return;
 
-  // Prefer the real phone number when WhatsApp supplies it alongside an @lid JID.
-  const jid = msg.key.senderPn || msg.key.participantPn || msg.key.remoteJid;
-  if (!jid || jid === 'status@broadcast') return;
+  // Always reply in the chat the message came from. In groups that is the
+  // group JID, even when WhatsApp also gives us the sender's phone JID.
+  const chatJid = msg.key.remoteJid;
+  const senderJid = msg.key.senderPn || msg.key.participantPn || msg.key.participant || chatJid;
+  if (!chatJid || chatJid === 'status@broadcast') return;
 
   const content = msg.message;
   const body = (
@@ -170,8 +173,8 @@ async function handleMessage(sock, msg) {
   ).trim();
 
   logger.debug('INCOMING', {
-    jid,
-    remoteJid: msg.key.remoteJid,
+    chatJid,
+    senderJid,
     fromMe: msg.key.fromMe,
     body
   });
@@ -188,36 +191,47 @@ async function handleMessage(sock, msg) {
     }
   }
 
+  // Rate-limit senders before commands or AI so spam cannot trigger either.
+  if (await checkIncoming({ sock, chatJid, senderJid })) return;
+
   if (body.startsWith(config.prefix)) {
     const [rawCommand, ...args] = body.slice(config.prefix.length).trim().split(/\s+/);
     const command = rawCommand.toLowerCase();
     const handler = handlers[command];
 
     if (handler) {
-      await handler({ sock, jid, args, body, msg, config });
+      await handler({ sock, jid: chatJid, senderJid, args, body, msg, config });
     } else {
-      await sock.sendMessage(jid, { text: `Unknown command. Type ${config.prefix}help for a list.` });
+      await sock.sendMessage(chatJid, { text: `Unknown command. Type ${config.prefix}help for a list.` });
     }
     return;
   }
 
   // While away mode is ON, incoming private messages get the away reply
   // instead of an AI answer. The owner's self-chat still uses AI.
-  if (!msg.key.fromMe && !jid.endsWith('@g.us') && awayState.enabled) {
-    await handleAwayMessage({ sock, jid, config });
+  if (!msg.key.fromMe && !chatJid.endsWith('@g.us') && awayState.enabled) {
+    await handleAwayMessage({ sock, jid: chatJid, config });
+    return;
+  }
+
+  // Keyword auto-replies run before AI and work in groups too.
+  const autoText = findReply(body);
+  if (autoText) {
+    await sock.sendMessage(chatJid, { text: autoText });
+    logger.debug('AUTO_REPLY', { chatJid, senderJid });
     return;
   }
 
   // Normal chat = CODEPLUS AI, no prefix required.
-  if (jid.endsWith('@g.us') && !config.aiReplyInGroups) return;
+  if (chatJid.endsWith('@g.us') && !config.aiReplyInGroups) return;
 
   try {
-    const reply = await askAI(jid, body);
-    await sock.sendMessage(jid, { text: reply });
-    logger.debug('AI_REPLY', { jid, reply });
+    const reply = await askAI(senderJid, body);
+    await sock.sendMessage(chatJid, { text: reply });
+    logger.debug('AI_REPLY', { chatJid, senderJid, reply });
   } catch (error) {
     logger.error('AI reply failed:', error);
-    await sock.sendMessage(jid, {
+    await sock.sendMessage(chatJid, {
       text: 'Sorry, CODEPLUS is temporarily unavailable. Please try again in a moment.'
     }).catch(() => {});
   }

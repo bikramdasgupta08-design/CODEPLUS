@@ -32,7 +32,7 @@ module.exports = {
   aiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
   aiFallbackModels: ['gemini-flash-lite-latest', 'gemini-3.5-flash'],
   aiHistoryLength: 20,
-  aiReplyInGroups: false,
+  aiReplyInGroups: true,
   aiRequestTimeoutMs: 10000,
 
   // Extra AI providers. Add any key you have; they are tried in order after
@@ -43,6 +43,22 @@ module.exports = {
   openrouterModel: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+
+  // --- Image generation (Gemini first, keyless Pollinations fallback) ---
+  imageModels: ['gemini-2.5-flash-image', 'gemini-3.1-flash-image'],
+  imageFallbackUrl: 'https://image.pollinations.ai/prompt/',
+  imageTimeoutMs: 60000,
+  imagePrompt: 'Generate a clear, high-quality image of: ',
+
+  // --- Spam control ---
+  spamEnabled: true,
+  spamWindowMs: 10000,
+  spamMaxMessages: 8,
+  spamBlockDurationMs: 10 * 60 * 1000,
+  spamAutoBlock: true,
+
+  // --- Keyword auto-replies (owner managed) ---
+  autoReplyFile: './autoreply.json',
 
   systemPrompt: [
     'You are CODEPLUS, a helpful, friendly AI assistant on WhatsApp.',

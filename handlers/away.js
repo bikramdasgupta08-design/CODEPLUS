@@ -1,20 +1,12 @@
 'use strict';
 
+const { isOwner } = require('./util');
+
 const state = { enabled: false, message: '' };
 const lastReplyAt = new Map();
 
-function digits(jid) {
-  return (jid || '').split('@')[0].replace(/\D/g, '');
-}
-
-function isOwner(jid, config) {
-  if (!config.ownerJids.length) return true;
-  const sender = digits(jid);
-  return config.ownerJids.some(owner => digits(owner) === sender);
-}
-
-async function away({ sock, jid, args, config }) {
-  if (!isOwner(jid, config)) {
+async function away({ sock, jid, senderJid, args, config }) {
+  if (!isOwner(senderJid || jid, config)) {
     await sock.sendMessage(jid, { text: 'This command is only available to the bot owner.' });
     return;
   }

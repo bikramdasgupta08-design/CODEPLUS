@@ -3,4 +3,6 @@ auth_info/
 .env
 bot-debug.log
 qr.txt
+autoreply.json
+tmp/
 *.log
