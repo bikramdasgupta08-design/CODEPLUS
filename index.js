@@ -27,6 +27,11 @@ let reconnecting = false;
 let pairingRequested = false;
 let missingSessionReported = false;
 let loggedOutRetries = 0;
+let silentRetryTimer = null;
+let startRetryTimer = null;
+let socketSwitching = false;
+let currentSock = null;
+let rejectedSessionHash = null;
 let baileys;
 const outgoingIds = new Set();
 const outgoingTexts = new Map();
@@ -136,6 +141,65 @@ function backupSession() {
   }
 }
 
+function sessionHash() {
+  const target = path.join(config.authDir, 'creds.json');
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+async function restartWithoutQr() {
+  if (socketSwitching) return;
+  socketSwitching = true;
+  // Prevent the old socket's close event from starting a second connection.
+  reconnecting = true;
+  try {
+    await currentSock?.end?.();
+  } catch (error) {
+    logger.warn('Could not close previous socket cleanly:', error.message);
+  }
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  currentSock = null;
+  reconnecting = false;
+  socketSwitching = false;
+  await start();
+}
+
+function scheduleSilentRetry() {
+  if (silentRetryTimer) return;
+  logger.warn('Keeping the service alive. Session restore will retry every 30 seconds without QR.');
+  silentRetryTimer = setInterval(async () => {
+    if (socketSwitching) return;
+    const existing = sessionHash();
+    // Do not loop forever on a credential file WhatsApp already rejected.
+    if (existing && existing === rejectedSessionHash) return;
+    if (!restoreSession(true)) return;
+    if (sessionHash() === rejectedSessionHash) return;
+    clearInterval(silentRetryTimer);
+    silentRetryTimer = null;
+    logger.info('Saved session changed; reconnecting without QR...');
+    try {
+      await restartWithoutQr();
+    } catch (error) {
+      logger.error('Silent reconnect failed:', error);
+      scheduleStartRetry();
+    }
+  }, 30000);
+}
+
+function scheduleStartRetry() {
+  if (startRetryTimer) return;
+  startRetryTimer = setTimeout(() => {
+    startRetryTimer = null;
+    start().catch(error => {
+      logger.error('Failed to start bot; retrying silently:', error);
+      scheduleStartRetry();
+    });
+  }, 30000);
+}
+
 async function loadBaileys() {
   if (!baileys) baileys = await import('@whiskeysockets/baileys');
   return baileys;
@@ -186,6 +250,7 @@ async function start() {
     // Required for v7 to build LID <-> phone-number mappings.
     shouldSyncHistoryMessage: ({ syncType }) => syncType !== 2
   });
+  currentSock = sock;
 
   // Remember every message we send so we never feed our own replies back into AI.
   const originalSend = sock.sendMessage.bind(sock);
@@ -227,9 +292,9 @@ async function start() {
         }
       } else if (!missingSessionReported) {
         missingSessionReported = true;
-        logger.error('No linked WhatsApp session found. QR generation is disabled on Render.');
-        logger.error('Upload the saved wa-creds.json as a Render Secret File, or set FORCE_QR=true only for a deliberate manual re-link.');
-        setTimeout(() => process.exit(1), 4000);
+        logger.warn('No linked WhatsApp session found. QR generation is disabled; the service stays online.');
+        logger.warn('Upload the saved wa-creds.json as a Render Secret File to restore the session automatically.');
+        scheduleSilentRetry();
       }
     }
 
@@ -250,9 +315,10 @@ async function start() {
           await new Promise(resolve => setTimeout(resolve, 3000));
           await start();
         } else {
-          logger.error('The saved WhatsApp session is no longer linked. QR is disabled.');
-          logger.error('Upload a fresh wa-creds.json Render Secret File, or set FORCE_QR=true only for manual re-linking.');
-          process.exit(1);
+          rejectedSessionHash = sessionHash();
+          logger.warn('Saved WhatsApp session is no longer linked. QR is disabled; the service stays online.');
+          logger.warn('Upload a fresh wa-creds.json Render Secret File to reconnect automatically.');
+          scheduleSilentRetry();
         }
       } else if (!reconnecting) {
         reconnecting = true;
@@ -267,6 +333,11 @@ async function start() {
       reconnecting = false;
       missingSessionReported = false;
       loggedOutRetries = 0;
+      rejectedSessionHash = null;
+      if (silentRetryTimer) {
+        clearInterval(silentRetryTimer);
+        silentRetryTimer = null;
+      }
       backupSession();
       logger.info(`Bot is ready as ${sock.user?.name || 'WhatsApp'}`);
     }
@@ -450,6 +521,6 @@ process.on('unhandledRejection', reason => {
 });
 
 start().catch(error => {
-  logger.error('Failed to start bot:', error);
-  process.exit(1);
+  logger.error('Failed to start bot; retrying silently:', error);
+  scheduleStartRetry();
 });

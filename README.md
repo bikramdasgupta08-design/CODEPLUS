@@ -272,7 +272,7 @@ QR generation is disabled by default. On a normal boot the logs should show only
 Bot is ready as Bikram Dasgupta
 ```
 
-If the Secret File is missing, the service exits with a clear log message instead of printing a QR. For a deliberate manual re-link only, set `FORCE_QR=true` (or `USE_PAIRING_CODE=true` for a code) and remove it immediately after linking.
+If the Secret File is missing or rejected, the service stays online, prints one clear warning, and silently retries every 30 seconds when the file changes — it never prints a QR and never shuts itself off. For a deliberate manual re-link only, set `FORCE_QR=true` (or `USE_PAIRING_CODE=true` for a code) and remove it immediately after linking.
 
 ### Important Render limitations
 
