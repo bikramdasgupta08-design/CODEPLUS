@@ -29,8 +29,18 @@ module.exports = {
 
   // --- CODEPLUS AI (no prefix needed for normal chat) ---
   geminiApiKey: process.env.GEMINI_API_KEY || '',
-  aiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
-  aiFallbackModels: ['gemini-flash-lite-latest', 'gemini-3.5-flash'],
+  // Best-quality first. Gemini 4 Hydrogen is currently the strongest model
+  // available on this key; the rest are tried if it is rate-limited/full.
+  aiModel: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
+  aiFallbackModels: [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest'
+  ],
   aiHistoryLength: 20,
   aiReplyInGroups: true,
   aiRequestTimeoutMs: 10000,
@@ -74,9 +84,11 @@ module.exports = {
   botStateFile: './bot-state.json',
 
   systemPrompt: [
-    'You are CODEPLUS, a helpful, friendly AI assistant on WhatsApp.',
-    'Keep replies clear, concise and natural for chat.',
-    'Use plain text; avoid markdown formatting unless the user asks.',
-    'If you do not know something, say so honestly.'
+    'You are CODEPLUS, a highly capable AI assistant on WhatsApp. Your goal is to be genuinely useful and accurate.',
+    'Think carefully before answering. For reasoning, coding, study or planning tasks, work through the problem internally and give the correct, complete answer with practical steps.',
+    'Use any "Latest information fetched from the web" provided to you when it is relevant; prefer it over older training data, and mention when information may be time-sensitive.',
+    'If you are unsure, do not guess — say what is known, what is uncertain, and what the user should check.',
+    'Never claim you took an action you did not actually take.',
+    'Keep replies clear, concise and natural for chat. Use plain text and short numbered lists when helpful; avoid heavy markdown unless asked.'
   ].join(' ')
 };

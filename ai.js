@@ -57,7 +57,7 @@ async function askGemini(text, history, systemPrompt) {
   throw lastError || new Error('No Gemini model available');
 }
 
-async function askOpenAICompatible({ name, apiKey, model, url, text, history, systemPrompt }) {
+async function askOpenAICompatible({ name, apiKey, model, url, text, history, systemPrompt, retryOnRateLimit = false }) {
   const messages = [
     { role: 'system', content: systemPrompt },
     ...history.map(h => ({ role: h.role, content: h.text })),
@@ -67,19 +67,36 @@ async function askOpenAICompatible({ name, apiKey, model, url, text, history, sy
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model, messages, temperature: 0.7 }),
-    signal: AbortSignal.timeout(config.aiRequestTimeoutMs || 10000)
-  });
+  for (let attempt = 0; attempt <= (retryOnRateLimit ? 2 : 0); attempt++) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, messages, temperature: 0.7 }),
+      signal: AbortSignal.timeout(config.aiRequestTimeoutMs || 10000)
+    });
 
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || `${name} error ${response.status}`);
+    const raw = await response.text();
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { data = null; }
 
-  const reply = data?.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw new Error(`${name} returned an empty reply`);
-  return reply;
+    if (!response.ok) {
+      const message = data?.error?.message || data?.message || raw.slice(0, 120) || `${name} error ${response.status}`;
+      // Pollinations' keyless tier allows about one reply every 45 seconds.
+      if (retryOnRateLimit && [402, 429].includes(response.status) && attempt < 2) {
+        const match = String(message).match(/Retry after (\d+)s/i);
+        const delay = Math.min(match ? Number(match[1]) + 1 : 10, 20);
+        await new Promise(resolve => setTimeout(resolve, delay * 1000));
+        continue;
+      }
+      throw new Error(message);
+    }
+
+    const reply = data?.choices?.[0]?.message?.content?.trim();
+    if (!reply) throw new Error(`${name} returned an empty reply`);
+    return reply;
+  }
+
+  throw new Error(`${name} rate limit persisted`);
 }
 
 function buildProviders(text, history, systemPrompt) {
@@ -143,7 +160,8 @@ function buildProviders(text, history, systemPrompt) {
       url: 'https://text.pollinations.ai/openai',
       text,
       history,
-      systemPrompt
+      systemPrompt,
+      retryOnRateLimit: true
     })
   });
 

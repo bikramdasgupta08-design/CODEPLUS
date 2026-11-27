@@ -112,7 +112,7 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 `config.js`:
 
 - `ownerJids` — JIDs/LIDs allowed to use owner commands. Includes the official number and its WhatsApp LID alias.
-- `aiModel` / `aiFallbackModels` — Gemini models (slow or overloaded models are aborted after 10s).
+- `aiModel` / `aiFallbackModels` — quality-ordered model chain (starts with Gemini 4 Hydrogen, then Gemini 3.x Pro/Flash variants). Rate-limited models are skipped automatically.
 - `aiHistoryLength` — chat memory size.
 - `aiReplyInGroups` — `true` answers in groups (current setting); set `false` for DMs only.
 - `imageModels` / `imageFallbackUrl` / `imageTimeoutMs` — image generation chain.
@@ -135,13 +135,15 @@ Group replies are routed to the group JID while per-sender identity drives owner
 
 CODEPLUS tries providers in this order and uses the first one that answers:
 
-1. **Gemini** — `GEMINI_API_KEY` (also tries 3 Gemini models in order)
+1. **Gemini** — `GEMINI_API_KEY`, starting with the strongest available model (**Gemini 4 Hydrogen**), then Gemini 3.8/3.7/3.6/3.5 Flash, Gemini 3.1 Pro, etc.
 2. **Groq** — `GROQ_API_KEY`, model from `GROQ_MODEL`
 3. **OpenRouter** — `OPENROUTER_API_KEY`, model from `OPENROUTER_MODEL`
 4. **OpenAI** — `OPENAI_API_KEY`, model from `OPENAI_MODEL`
 5. **Pollinations** — keyless free fallback, always available
 
-Add any keys you have to `.env` (or Render environment). If a provider is down, overloaded, or rate-limited, the next one answers automatically — including a keyless last resort. `!ai` shows which providers are enabled.
+Add any keys you have to `.env` (or Render environment). If a model/provider is down, overloaded, or rate-limited, the next one answers automatically. The keyless fallback also respects Pollinations' short rate limit and retries. `!ai` shows which providers are enabled and the full model order.
+
+Accuracy improvements: the system prompt now asks the model to think carefully, give complete practical answers, prefer fresh web data, and admit uncertainty instead of guessing. The reasoning test (bat-and-ball problem) is answered correctly.
 
 ### Fresh information from the web
 
