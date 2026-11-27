@@ -3,6 +3,9 @@ auth_info/
 .env
 bot-debug.log
 qr.txt
+wa-creds.json
+wa-creds.secret.json
+wa-creds-backup-*.json
 autoreply.json
 bot-state.json
 callerid.json

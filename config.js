@@ -9,8 +9,12 @@ module.exports = {
   // Folder where the WhatsApp login is stored. Keep it private.
   authDir: './auth_info',
 
-  // Pairing mode: QR is the default (most reliable).
-  // Set USE_PAIRING_CODE=true in .env only if you prefer an 8-character code.
+  // Render-only mode: no QR is printed or saved unless FORCE_QR=true is set
+  // deliberately. A missing session is restored from the Render Secret File.
+  forceQr: String(process.env.FORCE_QR || '').toLowerCase() === 'true',
+
+  // Pairing mode is opt-in too. Set USE_PAIRING_CODE=true only when you
+  // intentionally want a fresh 8-character link code.
   usePairingCode: String(process.env.USE_PAIRING_CODE || '').toLowerCase() === 'true',
   phoneNumber: process.env.PHONE_NUMBER || '919073846974',
 

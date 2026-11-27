@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const http = require('http');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -24,9 +25,113 @@ const SWITCH_COMMANDS = new Set(['enable', 'disable', 'status']);
 
 let reconnecting = false;
 let pairingRequested = false;
+let missingSessionReported = false;
+let loggedOutRetries = 0;
 let baileys;
 const outgoingIds = new Set();
 const outgoingTexts = new Map();
+
+// Render's free plan has an ephemeral disk. A Secret File (or local backup)
+// restores the WhatsApp credentials so redeploys never need a QR code.
+const SESSION_ENV_KEYS = ['WA_CREDENTIALS', 'WA_CREDS_JSON', 'WHATSAPP_CREDENTIALS'];
+const SECRET_PATHS = [
+  process.env.WA_CREDENTIALS_PATH,
+  '/etc/secrets/wa-creds.json',
+  '/etc/secrets/creds.json',
+  path.join(__dirname, 'wa-creds.secret.json'),
+  path.join(__dirname, 'wa-creds.json')
+].filter(Boolean);
+
+function readSessionFromEnvironment() {
+  for (const key of SESSION_ENV_KEYS) {
+    const raw = process.env[key];
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.me?.id || parsed?.signedIdentityKey) return parsed;
+    } catch (error) {
+      logger.warn(`${key} is not valid JSON:`, error.message);
+    }
+  }
+  return null;
+}
+
+function readSessionFromSecretFile() {
+  for (const file of SECRET_PATHS) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed?.me?.id || parsed?.signedIdentityKey) {
+        logger.info(`Restoring WhatsApp session from secret file: ${file}`);
+        return parsed;
+      }
+    } catch (error) {
+      logger.warn(`Could not read secret session file ${file}:`, error.message);
+    }
+  }
+  return null;
+}
+
+function findGeneratedBackup() {
+  try {
+    return fs.readdirSync(__dirname)
+      .filter(name => /^wa-creds-backup-.*\.json$/.test(name))
+      .sort()
+      .pop();
+  } catch {
+    return null;
+  }
+}
+
+function restoreSession(force = false) {
+  const target = path.join(config.authDir, 'creds.json');
+  if (!force && fs.existsSync(target)) return false;
+  let creds = readSessionFromSecretFile() || readSessionFromEnvironment();
+  if (!creds) {
+    const backup = findGeneratedBackup();
+    if (backup) {
+      try {
+        creds = JSON.parse(fs.readFileSync(path.join(__dirname, backup), 'utf8'));
+        logger.info(`Restoring WhatsApp session from local backup: ${backup}`);
+      } catch (error) {
+        logger.warn(`Could not read session backup ${backup}:`, error.message);
+      }
+    }
+  }
+  if (!creds || !isLinkedSession(creds)) return false;
+  fs.mkdirSync(config.authDir, { recursive: true });
+  // Write atomically so a restart during deploy never leaves a broken session.
+  const temp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(creds), { mode: 0o600 });
+  fs.renameSync(temp, target);
+  logger.info('WhatsApp session restored; QR is disabled.');
+  return true;
+}
+
+function isLinkedSession(creds) {
+  return Boolean(creds?.me?.id) && creds.me.name !== '~';
+}
+
+function backupSession() {
+  const source = path.join(config.authDir, 'creds.json');
+  if (!fs.existsSync(source)) return null;
+  try {
+    const raw = fs.readFileSync(source);
+    const parsed = JSON.parse(raw.toString());
+    if (!isLinkedSession(parsed)) return null;
+    const hash = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 12);
+    const nickname = String(parsed.me.name || '').replace(/[^\w-]/g, '').slice(0, 24);
+    const file = path.join(__dirname, `wa-creds-backup-${nickname}-${hash}.json`);
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, raw, { mode: 0o600 });
+      logger.warn(`IMPORTANT: save this file as a Render Secret File named wa-creds.json: ${file}`);
+    }
+    return file;
+  } catch (error) {
+    logger.warn('Could not prepare session backup:', error.message);
+    return null;
+  }
+}
 
 async function loadBaileys() {
   if (!baileys) baileys = await import('@whiskeysockets/baileys');
@@ -57,6 +162,8 @@ async function start() {
     DisconnectReason,
     fetchLatestBaileysVersion
   } = await loadBaileys();
+
+  restoreSession();
 
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
 
@@ -98,21 +205,28 @@ async function start() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    // "registered" stays false for QR-paired sessions, and a stale pairing
-    // request leaves me.name = "~". Only a real linked account counts.
-    const hasSession = Boolean(state.creds.me?.id) && state.creds.me.name !== '~';
+    // "registered" stays false for QR-paired sessions, and an abandoned
+    // pairing request leaves me.name = "~". Only a real linked account counts.
+    const hasSession = isLinkedSession(state.creds);
 
     if (qr && !hasSession) {
-      const qrFile = path.join(__dirname, 'qr.txt');
-      try {
-        fs.writeFileSync(qrFile, `${qr}\n`);
-      } catch (error) {
-        logger.warn('Could not save QR:', error.message);
-      }
-      logger.info(`QR ready. View it with: cat ${qrFile}`);
-      if (!config.usePairingCode) {
-        logger.info('Scan this QR with WhatsApp -> Linked Devices');
-        qrcode.generate(qr, { small: true });
+      if (config.forceQr || config.usePairingCode) {
+        if (config.forceQr && !config.usePairingCode) {
+          const qrFile = path.join(__dirname, 'qr.txt');
+          try {
+            fs.writeFileSync(qrFile, `${qr}\n`);
+          } catch (error) {
+            logger.warn('Could not save QR:', error.message);
+          }
+          logger.info(`QR ready (manual opt-in). View it with: cat ${qrFile}`);
+          logger.info('Scan this QR with WhatsApp -> Linked Devices');
+          qrcode.generate(qr, { small: true });
+        }
+      } else if (!missingSessionReported) {
+        missingSessionReported = true;
+        logger.error('No linked WhatsApp session found. QR generation is disabled on Render.');
+        logger.error('Upload the saved wa-creds.json as a Render Secret File, or set FORCE_QR=true only for a deliberate manual re-link.');
+        setTimeout(() => process.exit(1), 4000);
       }
     }
 
@@ -126,13 +240,17 @@ async function start() {
       pairingRequested = false;
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) {
-        logger.warn('Logged out. Clearing stale session; a fresh QR will be generated.');
-        try {
-          fs.rmSync(config.authDir, { recursive: true, force: true });
-        } catch (error) {
-          logger.warn('Could not clear auth folder:', error.message);
+        logger.warn('WhatsApp reported this session as logged out. Restoring saved credentials and reconnecting without QR...');
+        if (loggedOutRetries < 2) {
+          loggedOutRetries += 1;
+          restoreSession(true);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await start();
+        } else {
+          logger.error('The saved WhatsApp session is no longer linked. QR is disabled.');
+          logger.error('Upload a fresh wa-creds.json Render Secret File, or set FORCE_QR=true only for manual re-linking.');
+          process.exit(1);
         }
-        process.exit(0);
       } else if (!reconnecting) {
         reconnecting = true;
         logger.warn('Connection closed, reconnecting...');
@@ -144,6 +262,9 @@ async function start() {
 
     if (connection === 'open') {
       reconnecting = false;
+      missingSessionReported = false;
+      loggedOutRetries = 0;
+      backupSession();
       logger.info(`Bot is ready as ${sock.user?.name || 'WhatsApp'}`);
     }
   });

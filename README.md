@@ -7,16 +7,16 @@ One bot, one WhatsApp login:
 
 Built with Baileys (no browser/Chrome needed), multi-provider AI, and keyless image generation.
 
-## 1. Local setup
+## 1. Local setup (only for creating a session backup)
 
 ```bash
 npm install
 cp .env.example .env
 # put your free Gemini key in .env: GEMINI_API_KEY=...
-npm start
+FORCE_QR=true npm start
 ```
 
-Scan the QR with **WhatsApp → Linked Devices → Link a device**. It is printed in the terminal and also saved to `qr.txt` (`cat qr.txt`). The session is saved in `auth_info/`.
+Scan the QR with **WhatsApp → Linked Devices → Link a device** only when you intentionally need to create/replace the session file. It is printed in the terminal and saved to `qr.txt` (`cat qr.txt`). The session is saved in `auth_info/`. The current deployment does **not** run this locally; Render restores the saved session from a Secret File.
 
 `npm install` now includes `sharp`, `pdf-lib` and `libphonenumber-js` for image conversion and number parsing. For higher-quality AI background removal, an optional local Python environment can be created (never committed):
 
@@ -247,13 +247,12 @@ Accuracy improvements: the system prompt now asks the model to think carefully, 
 
 Before answering a normal message, CODEPLUS fetches a short, current context block from **Wikipedia** and **Google News** (India edition) and includes it in the AI prompt, along with the current IST date/time. This lets replies use recent information instead of only older training data. Lookups are cached for 10 minutes and fail silently, so a slow or blocked source never stops the bot. Disable with `webSearchEnabled: false` in `config.js`. `!ai` shows `Web lookup: on/off`.
 
-## 4. Deploying to Render
+## 4. Deploying to Render (recommended: Render-only, no QR)
 
 This repo binds to `process.env.PORT` on `0.0.0.0`, so a Render **Web Service** passes the port check instead of failing with `Port scan timeout reached / Application exited early`.
 
-1. Create a **Web Service** pointing at this repo (Node environment).
-2. Start command: `npm start`.
-3. Add environment variables in the Render dashboard (do **not** commit `.env`):
+1. Create **one** Web Service pointing at this repo (Node environment). Start command: `npm start`.
+2. Add environment variables in the Render dashboard (do **not** commit `.env`):
    ```
    GEMINI_API_KEY=your_key
    PHONE_NUMBER=919073846974
@@ -262,18 +261,27 @@ This repo binds to `process.env.PORT` on `0.0.0.0`, so a Render **Web Service** 
    # OPENROUTER_API_KEY=...
    # OPENAI_API_KEY=...
    ```
-4. Deploy. The QR is printed in the Render logs (and saved to `qr.txt` locally). On your phone: **WhatsApp → Linked Devices → Link a device → scan the QR**.
+3. Upload the WhatsApp session as a **Render Secret File** named `wa-creds.json`. It is mounted at `/etc/secrets/wa-creds.json` and restored into `auth_info/creds.json` on every boot/redeploy. Keep this file private; it is the logged-in device credential. To refresh it after a deliberate manual re-link, copy `auth_info/creds.json` to `wa-creds.json` and re-upload.
+4. **Turn off auto-deploy** for this service. A GitHub push is code-only; a redeploy should be manual so the paired WhatsApp device is not disturbed unnecessarily.
+5. Add a UptimeRobot HTTP monitor that pings the public Render URL every **5 minutes**. Expected response: HTTP 200 with `CODEPLUS is running`.
+6. Stop every other bot copy. Only **one** linked session may be active; running local and Render together logs one of them out.
 
-If you prefer a short 8-character code instead, set `USE_PAIRING_CODE=true` and look for `CODEPLUS pairing code: XXXXXXXX` in the logs.
+QR generation is disabled by default. On a normal boot the logs should show only:
+
+```
+Bot is ready as Bikram Dasgupta
+```
+
+If the Secret File is missing, the service exits with a clear log message instead of printing a QR. For a deliberate manual re-link only, set `FORCE_QR=true` (or `USE_PAIRING_CODE=true` for a code) and remove it immediately after linking.
 
 ### Important Render limitations
 
-- **Free web services sleep after 15 minutes with no traffic** and take ~1 minute to wake. A pinger that keeps it awake consumes almost the entire 750-hour monthly quota.
-- **Free services have no persistent disk.** Every sleep/redeploy deletes `auth_info/`, so you must pair again (a new QR appears in the logs).
+- **Free web services sleep after 15 minutes with no traffic** and take ~1 minute to wake. An UptimeRobot ping every 5 minutes keeps the service warm, but it still consumes most of the 750-hour monthly quota.
+- **Free services have no persistent disk.** The Secret File is what survives deploys and avoids a new QR.
 - There is **no free background worker** on Render.
 - Do not run a second copy paired to the same WhatsApp account — it will kick the other session into a reconnect loop.
 
-For genuinely free 24/7 hosting with a persistent session, use an **Oracle Cloud Always Free ARM VM** (`VM.Standard.A1.Flex`, Ubuntu ARM64) and run the bot under pm2. See the local setup commands above.
+If you deliberately move away from Render, an Oracle Cloud Always Free ARM VM with pm2 is another full-persistence option, but it is not needed for the current Render-only setup.
 
 ## Notes
 
