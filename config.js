@@ -76,6 +76,10 @@ module.exports = {
   spamBlockDurationMs: 10 * 60 * 1000,
   spamAutoBlock: true,
 
+  // --- Group protection ---
+  // Anti-prune restores members when this many are removed at once.
+  antiPruneThreshold: 2,
+
   // --- Keyword auto-replies (owner managed) ---
   autoReplyFile: './autoreply.json',
 

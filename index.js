@@ -12,7 +12,11 @@ const { checkIncoming } = require('./handlers/spam');
 const { findReply } = require('./handlers/autoreply');
 const { isChatEnabled, isSelfChat } = require('./handlers/chatstate');
 const { isOwner } = require('./handlers/util');
+const { handleImageCaption } = require('./handlers/media');
 const { askAI } = require('./ai');
+const callerid = require('./callerid');
+const safechat = require('./safechat');
+const groupguard = require('./groupguard');
 const logger = require('./logger');
 
 // Per-chat switches are controlled with these, even when the chat is paused.
@@ -156,6 +160,28 @@ async function start() {
     }
   });
 
+  // Group protection: member changes, settings changes and deleted messages.
+  sock.ev.on('group-participants.update', async event => {
+    try { await groupguard.onParticipantsUpdate(sock, event); }
+    catch (error) { logger.error('Group participant guard failed:', error); }
+  });
+  sock.ev.on('groups.update', async updates => {
+    try { await groupguard.onGroupsUpdate(sock, updates); }
+    catch (error) { logger.error('Group settings guard failed:', error); }
+  });
+  sock.ev.on('messages.delete', async event => {
+    try { await groupguard.onMessageDelete(sock, event); }
+    catch (error) { logger.error('Message delete guard failed:', error); }
+  });
+
+  // Caller ID mode: alerts for incoming calls (Baileys exposes call updates).
+  sock.ev.on('call', async calls => {
+    for (const call of calls || []) {
+      try { await callerid.alertCall(sock, call); }
+      catch (error) { logger.error('Caller ID alert failed:', error); }
+    }
+  });
+
   sock.ev.on('error', error => logger.error('Socket error:', error));
 }
 
@@ -229,6 +255,9 @@ async function handleMessage(sock, msg) {
   // Rate-limit senders before commands or AI so spam cannot trigger either.
   if (await checkIncoming({ sock, chatJid, senderJid })) return;
 
+  // Keep recent group messages in memory for anti-nuke message recovery.
+  if (chatJid.endsWith('@g.us')) groupguard.remember(msg, body);
+
   if (isCommand) {
     const handler = handlers[command];
 
@@ -237,6 +266,15 @@ async function handleMessage(sock, msg) {
     } else {
       await sock.sendMessage(chatJid, { text: `Unknown command. Type ${config.prefix}help for a list.` });
     }
+    return;
+  }
+
+  // Image sent with a natural caption like "make pdf" or "remove background".
+  if (await handleImageCaption(sock, chatJid, msg, body, config)) return;
+
+  // Caller ID mode: a bare phone number becomes a formatted lookup.
+  if (callerid.isEnabled() && /^\+?[\d\s()-]{10,25}$/.test(body) && body.replace(/\D/g, '').length >= 10) {
+    await sock.sendMessage(chatJid, { text: await callerid.lookup(body) });
     return;
   }
 
@@ -259,8 +297,11 @@ async function handleMessage(sock, msg) {
   if (chatJid.endsWith('@g.us') && !config.aiReplyInGroups) return;
 
   try {
-    const reply = await askAI(senderJid, body);
-    await sock.sendMessage(chatJid, { text: reply });
+    const safeOn = safechat.isEnabled(chatJid);
+    const reply = await askAI(senderJid, body, safeOn ? safechat.guardPrompt() : '');
+    const warning = safeOn ? safechat.warningFor(body) : '';
+    const finalText = warning ? `${warning}\n\n${reply}` : reply;
+    await sock.sendMessage(chatJid, { text: finalText });
     logger.debug('AI_REPLY', { chatJid, senderJid, reply });
   } catch (error) {
     logger.error('AI reply failed:', error);

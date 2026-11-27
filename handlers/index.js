@@ -3,10 +3,16 @@
 const send = (sock, jid, text) => sock.sendMessage(jid, { text });
 const { resetHistory, askOnce } = require('../ai');
 const { generateImage } = require('../image');
+const { rembgAvailable } = require('../media');
 const { istNow } = require('../web');
 const logger = require('../logger');
 const { status: spamStatus } = require('./spam');
 const { list: autoReplyList } = require('./autoreply');
+const media = require('./media');
+const { aiutils } = require('./extra');
+const { callerid, isEnabled: callerIdOn } = require('../callerid');
+const { safe } = require('../safechat');
+const { guard } = require('../groupguard');
 const {
   enable,
   disable,
@@ -73,6 +79,20 @@ const handlers = {
     }
   },
 
+  summarize: aiutils.summarize,
+  translate: aiutils.translate,
+
+  pdf: media.pdf,
+  png: media.png,
+  nobg: media.nobg,
+  removebg: media.removebg,
+  describe: media.describe,
+  caption: media.caption,
+
+  callerid,
+  safe,
+  guard,
+
   ai: async ({ sock, jid, config }) => {
     const enabled = [
       config.geminiApiKey && 'Gemini',
@@ -88,7 +108,10 @@ const handlers = {
       '• Normal messages get AI replies — no prefix needed.',
       `• Providers (in order): ${enabled.join(' > ') || 'none configured'}`,
       `• Gemini models: ${[config.aiModel, ...config.aiFallbackModels].join(', ')}`,
-      `• Images: Gemini > Pollinations (keyless)`,
+      `• Image generation: Gemini > Pollinations (keyless)`,
+      `• Image tools: PDF, PNG, background removal (${rembgAvailable() ? 'AI cutout' : 'offline fill'}), AI captions`,
+      `• Image understanding: Gemini vision`,
+      `• Caller ID mode: ${callerIdOn() ? 'on' : 'off'}`,
       `• Web lookup: ${config.webSearchEnabled ? 'on (Wikipedia + Google News)' : 'off'}`,
       `• Time zone: ${config.timeZone} (IST)`,
       `• Memory: last ${config.aiHistoryLength} messages per chat`,
@@ -106,22 +129,44 @@ const handlers = {
   help: async ({ sock, jid, config }) => send(sock, jid, [
     'CODEPLUS — commands:',
     `• This chat: ${isChatEnabled(jid, config) ? 'ENABLED' : 'DISABLED'} (send !enable here)`,
-    '• !enable — Enable CODEPLUS in THIS chat only (owner only)',
-    '• !disable — Pause CODEPLUS in THIS chat only (owner only)',
-    '• !status — Show this chat\'s switch status (owner only)',
-    '• (no prefix) — Chat with AI normally',
-    '• !ping — Reply with pong',
-    '• !id — Show the current chat ID',
-    '• !echo <text> — Echo text back',
-    '• !time — Show the current date and time',
-    '• !img <prompt> — Generate an image (Gemini, then keyless fallback)',
-    '• !improve <text> — Rewrite text more clearly',
-    '• !away [off|message] — Set or clear away auto-reply (owner only)',
-    '• !spam [status|on|off|unblock] — Spam control (owner only)',
-    '• !autoreply [add|remove|list|on|off] — Keyword auto-replies (owner only)',
-    '• !ai — Show CODEPLUS AI status',
-    '• !aireset — Clear AI memory for this chat',
-    '• !help — Show this list'
+    '',
+    'SWITCH (owner only):',
+    '• !enable — enable CODEPLUS in THIS chat only',
+    '• !disable — pause CODEPLUS in THIS chat only',
+    '• !status — show this chat\'s state',
+    '',
+    'AI:',
+    '• (no prefix) — chat with AI using fresh web data',
+    '• !ai — AI providers, models and features',
+    '• !aireset — clear this chat\'s AI memory',
+    '• !improve <text> — rewrite text more clearly',
+    '• !summarize [count] — summarize recent chat',
+    '• !translate <language> <text> — translate text',
+    '• !img <prompt> — generate an image',
+    '',
+    'IMAGE TOOLS (send an image with the command as caption, or reply to an image):',
+    '• !pdf — image to PDF',
+    '• !png — image to PNG',
+    '• !nobg — remove background',
+    '• !describe [question] — AI description of an image',
+    '• !caption — AI-generated social caption',
+    '• You can also caption an image with: "make pdf", "make png",',
+    '  "remove background", "caption" or "describe".',
+    '',
+    'SAFETY & UTILITIES (owner only):',
+    '• !callerid on|off|status|lookup <number>|save <number> | <name> | <tag>',
+    '• !safe on|off|check <text> — scam / unsafe content checks',
+    '• !guard on|off|snapshot|antiprune on|off|antinuke on|off — group protection',
+    '• !away [off|message] — away auto-reply',
+    '• !spam [status|on|off|unblock] — spam control',
+    '• !autoreply [add|remove|list|on|off] — keyword auto-replies',
+    '',
+    'BASIC:',
+    '• !ping — pong 🏓',
+    '• !id — current chat ID',
+    '• !echo <text> — echo text',
+    '• !time — current IST date and time',
+    '• !help — this list'
   ].join('\n')),
 
   away: require('./away').away,

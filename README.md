@@ -18,6 +18,15 @@ npm start
 
 Scan the QR with **WhatsApp → Linked Devices → Link a device**. It is printed in the terminal and also saved to `qr.txt` (`cat qr.txt`). The session is saved in `auth_info/`.
 
+`npm install` now includes `sharp`, `pdf-lib` and `libphonenumber-js` for image conversion and number parsing. For higher-quality AI background removal, an optional local Python environment can be created (never committed):
+
+```bash
+python3 -m venv .venv-rembg
+.venv-rembg/bin/pip install 'rembg[cpu]' onnxruntime
+```
+
+Without it, background removal still works using the built-in offline method.
+
 Run 24/7 with pm2:
 
 ```bash
@@ -52,6 +61,14 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!dis
 | `!time` | Show current date/time in IST (India) |
 | `!img <prompt>` | Generate and send an image |
 | `!improve <text>` | Rewrite text more clearly (no chat-memory pollution) |
+| `!summarize [count]` | Summarize recent chat messages |
+| `!translate <language> <text>` | Translate text |
+| `!pdf` / `!png` / `!nobg` | Convert a sent image to PDF / PNG / background-removed PNG |
+| `!describe [question]` | AI description of a sent image (Gemini vision) |
+| `!caption` | AI-written caption for a sent image |
+| `!callerid [on\|off\|status\|lookup\|save\|remove]` | Caller ID mode (owner only) |
+| `!safe [on\|off\|check <text>]` | Safe-chat scam checks (owner only) |
+| `!guard [on\|off\|snapshot\|antiprune\|antinuke]` | Group anti-prune / anti-nuke (owner only) |
 | `!away [off\|message]` | Away auto-reply (owner only) |
 | `!spam [status\|on\|off\|unblock]` | Spam control / temporary blocks (owner only) |
 | `!autoreply [add\|remove\|list\|on\|off]` | Keyword auto-replies (owner only) |
@@ -78,6 +95,86 @@ Every friend chat and group has its **own** switch. Only the owner can change it
 ### Images
 
 `!img <prompt>` tries Gemini image models first, then a keyless Pollinations fallback (no extra key needed). Your free Gemini key may have **zero image quota** — in that case the fallback handles it automatically. Pollinations' free tier allows about one image per 45 seconds, so CODEPLUS spaces requests and honors the server's retry delay; generation can take ~30 seconds.
+
+#### Working with images you send
+
+Send an image and use the command as its caption, or reply to an image with the command:
+
+```
+!pdf        # image -> A4 PDF document
+!png        # image -> PNG
+!nobg       # remove background -> transparent PNG
+!describe   # AI describes what is actually in the image
+!caption    # AI writes a short caption + hashtags
+!describe What text is written in this image?
+```
+
+Natural captions work too — just send an image captioned `make pdf`, `make png`, `remove background`, `caption` or `describe`.
+
+Background removal uses AI cutout (`rembg`) when the optional Python environment `.venv-rembg` exists; otherwise it falls back to a keyless, offline border flood-fill that works well on solid-colour backgrounds (ID photos, product shots, screenshots). The AI environment is **not** committed or installed on Render; the offline fallback keeps that deployment working.
+
+Image understanding uses Gemini vision on the same quality-ordered model chain as text (verified with `gemini-4-hydrogen`).
+
+### Caller ID mode
+
+Owner-only, from your own chat:
+
+```
+!callerid on                       # enable number lookups + call alerts
+!callerid lookup 919073846974      # formatted number report
+!callerid save 919073846974 | Ramesh | safe | known friend
+!callerid save 9012345678 | Fraud call | scam | asking for OTP
+!callerid remove 919073846974
+!callerid status
+```
+
+With the mode ON:
+
+- Sending a bare phone number in an enabled chat returns country, number type, validity, your saved label and any public reports found on the web.
+- Incoming WhatsApp voice/video calls send an alert to your own chat with the number and saved label (Baileys exposes call events). Repeated alerts for the same number are throttled to one per 5 minutes.
+- Public caller-ID databases are not reliably scrapable without paid APIs, so CODEPLUS is honest about that: it uses your own saved labels plus public news pages, and warns you not to trust caller ID alone for OTPs or payments.
+- Set `CALLERID_LOOKUP_ON_CALL=true` in `.env` to also run a web lookup for each call alert.
+
+State is saved in `callerid.json` (git-ignored).
+
+### Safe chatting
+
+Owner-only, per chat:
+
+```
+!safe on                  # scan incoming messages and guard AI replies here
+!safe off
+!safe check <text>        # scan a message/link for scam patterns
+```
+
+When ON, CODEPLUS:
+
+- flags OTP/password requests, UPI/payment demands, suspicious short links, fake job/investment offers and threats,
+- prepends a short scam warning before the AI answer when something looks risky,
+- adds safety rules to the AI prompt so it refuses harmful requests and never asks for your OTP or credentials.
+
+Detection is heuristic plus AI reasoning — useful, but not a guarantee. Verify independently.
+
+### Group protection: anti-prune and anti-nuke
+
+Owner-only. Use inside a group (or append a group JID from your own chat):
+
+```
+!guard on                 # enable both protections + save a safety snapshot
+!guard snapshot           # refresh the saved subject/description/invite/members
+!guard antiprune on       # restore members after a mass removal (needs admin)
+!guard antinuke on        # detect and restore settings changes, recover deleted messages
+!guard status             # show state and last incidents
+!guard off
+```
+
+What it can actually do under Baileys:
+
+- **Anti-prune:** if 2+ members are removed at once and the bot is admin, it re-adds them and reports the incident. Single removals are logged, not fought (so legitimate moderation still works).
+- **Anti-nuke:** saves group subject, description, invite link and member list. If the subject/description changes, it restores them when admin and alerts the group + owner. If the bot itself is removed, it tries to rejoin using the saved invite link and alerts you otherwise.
+- **Deleted messages:** recent group messages are kept in memory only; if one is deleted, the bot posts the original text with a warning (enabled by anti-nuke).
+
+What it cannot do: stop WhatsApp admins from deleting the group, prevent account bans, or re-add members without admin rights. State is in `groupguard.json` (git-ignored).
 
 ### Keyword auto-replies
 
@@ -119,6 +216,7 @@ Tune `spamWindowMs`, `spamMaxMessages`, `spamBlockDurationMs`, and `spamAutoBloc
 - `spamEnabled` / `spamWindowMs` / `spamMaxMessages` / `spamBlockDurationMs` / `spamAutoBlock` — spam protection.
 - `autoReplyFile` — where keyword auto-reply rules are saved (`autoreply.json`).
 - `botStateFile` — where per-chat on/off states are saved (`bot-state.json`).
+- `antiPruneThreshold` — number of simultaneous removals that triggers member restoration (default 2).
 - `timeZone` — `Asia/Kolkata`; `!time` and AI date/time context use IST.
 - `webSearchEnabled` / `webContextTimeoutMs` / `webCacheMs` / `webMaxChars` — fresh web context for replies.
 - `systemPrompt` — CODEPLUS personality.

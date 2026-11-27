@@ -187,12 +187,13 @@ async function runProviders(text, history, systemPrompt) {
 }
 
 // Main conversation path: keeps per-chat history and adds fresh web context.
-async function askAI(jid, text) {
+async function askAI(jid, text, extraPrompt = '') {
   const history = getHistory(jid);
   const context = await buildContext(text);
   const systemPrompt = [
     config.systemPrompt,
     `Current date and time in India (IST): ${istNow()}. Use this for any date or time question.`,
+    extraPrompt,
     context
       ? 'Latest information fetched from the web (use it when relevant; prefer it over older training data):\n' + context
       : ''

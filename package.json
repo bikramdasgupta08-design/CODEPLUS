@@ -1,8 +1,8 @@
 {
-  "name": "codeplus-wa-bot",
+  "name": "personal-wa-bot-baileys",
   "version": "1.0.0",
   "private": true,
-  "description": "CODEPLUS - one WhatsApp bot with ! commands and no-prefix AI chat",
+  "description": "Personal WhatsApp bot built with Baileys (no browser required)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -11,8 +11,11 @@
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "dotenv": "^16.4.5",
+    "libphonenumber-js": "^1.12.31",
+    "pdf-lib": "^1.17.1",
     "pino": "^9.6.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.33.5"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -5,5 +5,9 @@ bot-debug.log
 qr.txt
 autoreply.json
 bot-state.json
+callerid.json
+safechat.json
+groupguard.json
+.venv-rembg/
 tmp/
 *.log
