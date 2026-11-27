@@ -1,6 +1,7 @@
 'use strict';
 
 const send = (sock, jid, text) => sock.sendMessage(jid, { text });
+const SINGLE_SELECT = 1;
 const { resetHistory, askOnce } = require('../ai');
 const { generateImage } = require('../image');
 const { rembgAvailable } = require('../media');
@@ -20,12 +21,96 @@ const {
   isChatEnabled
 } = require('./chatstate');
 
+// Row ids are sent back as `!command` when tapped, so every menu item runs
+// exactly the same handler as its typed `!` equivalent.
+const COMMAND_MENU_SECTIONS = [
+  {
+    title: 'Quick',
+    rows: [
+      ['ping', 'Instant pong reply'],
+      ['time', 'Current IST time'],
+      ['id', 'Show this chat ID'],
+      ['echo', 'Echo text back'],
+      ['status', 'Chat switch status'],
+      ['help', 'Full text command list']
+    ]
+  },
+  {
+    title: 'AI tools',
+    rows: [
+      ['ai', 'AI providers and status'],
+      ['aireset', 'Clear this chat memory'],
+      ['improve', 'Rewrite text clearly'],
+      ['summarize', 'Summarize recent chat'],
+      ['translate', 'Translate text'],
+      ['img', 'Generate an image']
+    ]
+  },
+  {
+    title: 'Images',
+    rows: [
+      ['pdf', 'Image to PDF'],
+      ['png', 'Image to PNG'],
+      ['nobg', 'Remove background'],
+      ['removebg', 'Remove background'],
+      ['describe', 'AI image description'],
+      ['caption', 'AI image caption']
+    ]
+  },
+  {
+    title: 'Safety',
+    rows: [
+      ['callerid', 'Caller ID mode'],
+      ['safe', 'Scam / unsafe checks'],
+      ['guard', 'Group protection']
+    ]
+  },
+  {
+    title: 'Controls',
+    rows: [
+      ['enable', 'Enable in this chat'],
+      ['disable', 'Pause this chat'],
+      ['away', 'Away auto-reply'],
+      ['spam', 'Spam control'],
+      ['autoreply', 'Keyword auto-replies']
+    ]
+  }
+];
+
 const handlers = {
   enable,
   disable,
   status: chatStatus,
 
   ping: async ({ sock, jid }) => send(sock, jid, 'pong 🏓'),
+
+  // WhatsApp's selectable list window. Opening it is instant (no AI/web call).
+  menu: async ({ sock, jid, config }) => {
+    const sections = COMMAND_MENU_SECTIONS.map(section => ({
+      title: section.title,
+      rows: section.rows.map(([command, description]) => ({
+        title: `/${command}`,
+        description,
+        rowId: `run:${command}`
+      }))
+    }));
+
+    try {
+      await sock.sendMessage(jid, {
+        listMessage: {
+          title: 'CODEPLUS commands',
+          description: 'Tap a command to run it instantly.',
+          buttonText: 'Select command',
+          footerText: `Both ! and / work • ${isChatEnabled(jid, config) ? 'ON' : 'PAUSED'}`,
+          listType: SINGLE_SELECT,
+          sections
+        }
+      });
+    } catch (error) {
+      logger.warn('COMMAND_MENU_FAILED', error.message);
+      await send(sock, jid, 'Command menu is not supported here. Send /help or !help for the full text list.');
+    }
+  },
 
   id: async ({ sock, jid }) => send(sock, jid, `Chat ID: ${jid}`),
 
@@ -129,6 +214,9 @@ const handlers = {
   help: async ({ sock, jid, config }) => send(sock, jid, [
     'CODEPLUS — commands:',
     `• This chat: ${isChatEnabled(jid, config) ? 'ENABLED' : 'DISABLED'} (send !enable here)`,
+    '• Send / to open the tap-to-select command window',
+    '• /help opens that window; !help shows this text list',
+    '• Every command works with either ! or /',
     '',
     'SWITCH (owner only):',
     '• !enable — enable CODEPLUS in THIS chat only',
@@ -166,6 +254,7 @@ const handlers = {
     '• !id — current chat ID',
     '• !echo <text> — echo text',
     '• !time — current IST date and time',
+    '• !menu — tap-to-select command window',
     '• !help — this list'
   ].join('\n')),
 

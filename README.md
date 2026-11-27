@@ -1,9 +1,10 @@
-# CODEPLUS — WhatsApp bot (`!` commands + no-prefix AI)
+# CODEPLUS — WhatsApp bot (`!` / `/` commands + no-prefix AI)
 
 One bot, one WhatsApp login:
 
 - **Normal text → AI reply.** No prefix needed.
-- **`!` commands → controls** (`!help`, `!img`, `!improve`, `!spam`, `!autoreply`, `!ai`, etc.).
+- **`!` or `/` commands → controls** (`!help`, `/help`, `!img`, `/img`, `!spam`, `/spam`, etc.).
+- **`/` opens a tap-to-select command window** in WhatsApp.
 
 Built with Baileys (no browser/Chrome needed), multi-provider AI, and keyless image generation.
 
@@ -54,8 +55,10 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!dis
 | `!enable` | Enable CODEPLUS in THIS chat only (owner only) |
 | `!disable` | Pause CODEPLUS in THIS chat only (owner only) |
 | `!status` | Show this chat's switch status (owner only) |
-| `!help` | Show all commands |
-| `!ping` | Reply with pong |
+| `!help` | Show the full text list |
+| `/` or `/help` | Open the tap-to-select command window |
+| `!menu` | Open the same command window |
+| `!ping` / `/ping` | Reply with pong |
 | `!id` | Show the current chat ID |
 | `!echo <text>` | Echo text back |
 | `!time` | Show current date/time in IST (India) |
@@ -74,6 +77,8 @@ CODEPLUS replies with AI and remembers the last 20 messages per chat. Send `!dis
 | `!autoreply [add\|remove\|list\|on\|off]` | Keyword auto-replies (owner only) |
 | `!ai` | Show AI/image/spam status |
 | `!aireset` | Clear AI memory for this chat |
+
+Every command accepts either `!` or `/`. Sending only `/` (or `/help`) makes CODEPLUS reply with a WhatsApp single-select list: tap a command and it runs instantly. This is a bot-provided picker; the unofficial WhatsApp API cannot modify WhatsApp's own keyboard suggestion bar. The picker is instant because it does not call AI or the web.
 
 While `!away` is ON, incoming private messages get the away reply instead of AI.
 

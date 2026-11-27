@@ -380,6 +380,27 @@ async function start() {
   sock.ev.on('error', error => logger.error('Socket error:', error));
 }
 
+function extractMessageBody(msg) {
+  const content = msg.message || {};
+  const selected = (
+    content.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    content.buttonResponseMessage?.buttonResponse?.id ||
+    content.templateButtonReplyMessage?.selectedId ||
+    ''
+  ).trim();
+
+  // Selections from the slash menu run the same handler as a typed !command.
+  if (selected) return `!${selected.replace(/^(run|cmd|menu):/, '')}`;
+
+  return (
+    content.conversation ||
+    content.extendedTextMessage?.text ||
+    content.imageMessage?.caption ||
+    content.videoMessage?.caption ||
+    ''
+  ).trim();
+}
+
 async function handleMessage(sock, msg) {
   if (!msg.message) return;
 
@@ -389,14 +410,7 @@ async function handleMessage(sock, msg) {
   const senderJid = msg.key.senderPn || msg.key.participantPn || msg.key.participant || chatJid;
   if (!chatJid || chatJid === 'status@broadcast') return;
 
-  const content = msg.message;
-  const body = (
-    content.conversation ||
-    content.extendedTextMessage?.text ||
-    content.imageMessage?.caption ||
-    content.videoMessage?.caption ||
-    ''
-  ).trim();
+  const body = extractMessageBody(msg);
 
   logger.debug('INCOMING', {
     chatJid,
@@ -418,11 +432,12 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  const isCommand = body.startsWith(config.prefix);
+  const slashCommand = body.startsWith('/');
+  const isCommand = body.startsWith(config.prefix) || slashCommand;
   let command = '';
   let args = [];
-  if (isCommand) {
-    const [rawCommand, ...rest] = body.slice(config.prefix.length).trim().split(/\s+/);
+  if (isCommand && body.length > 1) {
+    const [rawCommand, ...rest] = body.slice(1).trim().split(/\s+/);
     command = rawCommand.toLowerCase();
     args = rest;
   }
@@ -453,13 +468,25 @@ async function handleMessage(sock, msg) {
   // Keep recent group messages in memory for anti-nuke message recovery.
   if (chatJid.endsWith('@g.us')) groupguard.remember(msg, body);
 
+  // Slash command palette: "/" or "/help" opens a selectable WhatsApp list.
+  // Tapping an item returns an ordinary !command, so all handlers stay shared.
+  if (isCommand && (
+    body === '/' ||
+    body === '/?' ||
+    command === 'menu' ||
+    (slashCommand && command === 'help')
+  )) {
+    await handlers.menu({ sock, jid: chatJid, senderJid, args, body, msg, config });
+    return;
+  }
+
   if (isCommand) {
     const handler = handlers[command];
 
     if (handler) {
       await handler({ sock, jid: chatJid, senderJid, args, body, msg, config });
     } else {
-      await sock.sendMessage(chatJid, { text: `Unknown command. Type ${config.prefix}help for a list.` });
+      await sock.sendMessage(chatJid, { text: `Unknown command. Type ${config.prefix}help, /help, or just / for the command menu.` });
     }
     return;
   }
