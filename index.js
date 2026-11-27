@@ -113,6 +113,9 @@ function isLinkedSession(creds) {
 }
 
 function backupSession() {
+  // Render has no persistent disk, so a generated backup cannot be downloaded
+  // after a redeploy. The uploaded Secret File is the single source of truth.
+  if (process.env.RENDER) return null;
   const source = path.join(config.authDir, 'creds.json');
   if (!fs.existsSync(source)) return null;
   try {
